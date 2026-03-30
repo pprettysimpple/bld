@@ -1,0 +1,9 @@
+CompileFlags:
+  Add:
+    - -xc
+    - -std=c11
+    - -DBLD_CC="cc"
+    - -DBLD_IMPLEMENTATION
+    - -DBLD_STRIP_PREFIX
+    - -I.
+    - -w
