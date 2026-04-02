@@ -16,6 +16,7 @@
   #error "Windows support is not yet implemented"
 #else
   #include <dirent.h>
+  #include <fcntl.h>
   #include <fnmatch.h>
   #include <pthread.h>
   #include <sys/mman.h>

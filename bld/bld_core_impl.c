@@ -336,9 +336,18 @@ Bld_Hash bld_hash_str(const char* s) {
 }
 
 Bld_Hash bld_hash_file(Bld_Path p) {
-    size_t len;
-    const char* data = bld_fs_read_file(p, &len);
-    return (Bld_Hash){XXH3_64bits(data, len)};
+    struct stat st;
+    if (stat(p.s, &st) != 0) bld_panic("hash_file: stat %s: %s\n", p.s, strerror(errno));
+    size_t len = (size_t)st.st_size;
+    if (len == 0) return (Bld_Hash){0};
+    int fd = open(p.s, O_RDONLY);
+    if (fd < 0) bld_panic("hash_file: open %s: %s\n", p.s, strerror(errno));
+    void* data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (data == MAP_FAILED) { close(fd); bld_panic("hash_file: mmap %s: %s\n", p.s, strerror(errno)); }
+    Bld_Hash h = {XXH3_64bits(data, len)};
+    munmap(data, len);
+    close(fd);
+    return h;
 }
 
 Bld_Hash bld_hash_dir(Bld_Path dir) {
