@@ -56,6 +56,7 @@ static int bld__check_step_cache(Bld* b, Bld_Step* step) {
         Bld_Path cached_dep = bld__step_depfile_cache(b, step);
         if (!bld_fs_exists(cached_dep)) return 0;
     }
+    if (!bld__validate_artifact(b, step)) return 0;
     return 1;
 }
 
@@ -132,6 +133,8 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
             bld_fs_rename(expected, new_art);
         }
     }
+
+    bld__write_artifact_meta(b, step);
 
     __atomic_fetch_add(&b->steps_executed, 1, __ATOMIC_RELAXED);
     if (!b->settings.silent) {

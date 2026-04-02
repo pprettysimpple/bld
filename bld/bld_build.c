@@ -508,7 +508,32 @@ static Bld_Path bld__cache_art(Bld* b, Bld_Hash h) {
     return bld_path_join(bld_path_join(b->cache, bld_path("arts")), bld_path_fmt("%" PRIu64, h.value));
 }
 
+static Bld_Path bld__cache_art_meta(Bld* b, Bld_Hash h) {
+    return bld_path_join(bld_path_join(b->cache, bld_path("arts")), bld_path_fmt("%" PRIu64 ".meta", h.value));
+}
+
 static Bld_Path bld__step_artifact(Bld* b, Bld_Step* s) { return bld__cache_art(b, s->full_hash_value); }
+
+static void bld__write_artifact_meta(Bld* b, Bld_Step* s) {
+    Bld_Path art = bld__step_artifact(b, s);
+    if (!bld_fs_exists(art)) return;
+    Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
+    Bld_Path meta = bld__cache_art_meta(b, s->full_hash_value);
+    const char* data = bld_str_fmt("%" PRIu64, ch.value);
+    bld_fs_write_file(meta, data, strlen(data));
+}
+
+static int bld__validate_artifact(Bld* b, Bld_Step* s) {
+    Bld_Path art = bld__step_artifact(b, s);
+    Bld_Path meta = bld__cache_art_meta(b, s->full_hash_value);
+    if (!bld_fs_exists(meta)) return 0;
+    size_t len;
+    const char* data = bld_fs_read_file(meta, &len);
+    uint64_t stored = 0;
+    if (sscanf(data, "%" SCNu64, &stored) != 1) return 0;
+    Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
+    return ch.value == stored;
+}
 static Bld_Path bld__target_artifact(Bld* b, Bld_Target* t) { return bld__step_artifact(b, t->exit); }
 
 static Bld_Path bld__step_depfile_cache(Bld* b, Bld_Step* s) {

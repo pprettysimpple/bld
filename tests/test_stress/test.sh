@@ -74,6 +74,7 @@ done
             wait "$pid" 2>/dev/null
         fi
         rm -rf .cache/tmp .cache 2>/dev/null
+        bld_bootstrap
 
         BUILD_EXIT=0
         BUILD_OUTPUT="$(./b install -j4 --prefix out 2>&1)" || BUILD_EXIT=$?
