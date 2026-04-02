@@ -3,21 +3,6 @@
 
 #include "bld_exec.c"
 
-/* ---- Detect tools ---- */
-
-static int bld__has_in_path(const char* name) {
-    const char* path_env = getenv("PATH");
-    if (!path_env) return 0;
-    const char* p = path_env;
-    while (*p) {
-        const char* sep = strchr(p, ':');
-        size_t len = sep ? (size_t)(sep - p) : strlen(p);
-        if (bld_fs_is_file(bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name)))) return 1;
-        p += len + (sep ? 1 : 0);
-    }
-    return 0;
-}
-
 /* ---- CLI parsing ---- */
 
 static void bld__parse_args(Bld* b) {
@@ -276,7 +261,20 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
     bld_fs_write_file(bld_path_join(b->cache, bld_path(".gitignore")), "*", 1);
     bld_fs_write_file(bld_path_join(b->out, bld_path(".gitignore")), "*", 1);
 
-    b->compile_driver = "cc";
+    /* C compiler */
+    const char *cc_env = getenv("CC"), *cc = cc_env ? cc_env : "cc";
+    b->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
+                                      .identity_hash = bld_hash_str(cc), .available = 1};
+    /* C++ compiler */
+    const char *cxx_env = getenv("CXX"), *cxx = cxx_env ? cxx_env : "c++";
+    b->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cxx,
+                                      .identity_hash = bld_hash_str(cxx),
+                                      .available = bld__has_in_path(cxx) || cxx_env != NULL};
+    /* ASM assembler (falls back to C compiler) */
+    const char *as_env = getenv("AS"), *as_drv = as_env ? as_env : cc;
+    b->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
+                                      .identity_hash = bld_hash_str(as_drv), .available = 1};
+
     if (bld__has_in_path("llvm-ar")) b->static_link_tool = "llvm-ar";
     else if (bld__has_in_path("ar")) b->static_link_tool = "ar";
     b->global_warnings = 1;

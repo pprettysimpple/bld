@@ -68,8 +68,8 @@ static Bld_ActionResult gen_amalgamated(void* ctx, Bld_Path output, Bld_Path dep
 /* ---- Configure ---- */
 
 void configure(Bld* b) {
+    bld_set_compiler_c(b, .standard = BLD_C_11);
     CompileFlags flags = default_compile_flags(b);
-    flags.standard = STD_C11;
     flags.warnings = TOGGLE_OFF;
 
     const char** src_files = BLD_PATHS("bld.h", "bld/bld_core.h",

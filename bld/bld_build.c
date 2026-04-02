@@ -441,17 +441,28 @@ static const char* bld__resolve_optimize(Bld_Optimize o) {
     return "";
 }
 
-static const char* bld__resolve_standard(Bld_Standard s) {
+static const char* bld__resolve_c_standard(Bld_CStd s) {
     switch (s) {
-        case BLD_STD_DEFAULT: return "";
-        case BLD_STD_C90: return "-std=c90";
-        case BLD_STD_C99: return "-std=c99"; case BLD_STD_C11: return "-std=c11";
-        case BLD_STD_C17: return "-std=c17"; case BLD_STD_C23: return "-std=c23";
-        case BLD_STD_GNU99: return "-std=gnu99"; case BLD_STD_GNU11: return "-std=gnu11";
-        case BLD_STD_GNU17: return "-std=gnu17"; case BLD_STD_GNU23: return "-std=gnu23";
-        case BLD_STD_CXX11: return "-std=c++11"; case BLD_STD_CXX14: return "-std=c++14";
-        case BLD_STD_CXX17: return "-std=c++17"; case BLD_STD_CXX20: return "-std=c++20";
-        case BLD_STD_CXX23: return "-std=c++23";
+        case BLD_C_DEFAULT: return "";
+        case BLD_C_90: return "-std=c90";
+        case BLD_C_99: return "-std=c99"; case BLD_C_11: return "-std=c11";
+        case BLD_C_17: return "-std=c17"; case BLD_C_23: return "-std=c23";
+        case BLD_C_GNU90: return "-std=gnu90"; case BLD_C_GNU99: return "-std=gnu99";
+        case BLD_C_GNU11: return "-std=gnu11"; case BLD_C_GNU17: return "-std=gnu17";
+        case BLD_C_GNU23: return "-std=gnu23";
+    }
+    return "";
+}
+
+static const char* bld__resolve_cxx_standard(Bld_CxxStd s) {
+    switch (s) {
+        case BLD_CXX_DEFAULT: return "";
+        case BLD_CXX_11: return "-std=c++11"; case BLD_CXX_14: return "-std=c++14";
+        case BLD_CXX_17: return "-std=c++17"; case BLD_CXX_20: return "-std=c++20";
+        case BLD_CXX_23: return "-std=c++23";
+        case BLD_CXX_GNU11: return "-std=gnu++11"; case BLD_CXX_GNU14: return "-std=gnu++14";
+        case BLD_CXX_GNU17: return "-std=gnu++17"; case BLD_CXX_GNU20: return "-std=gnu++20";
+        case BLD_CXX_GNU23: return "-std=gnu++23";
     }
     return "";
 }
@@ -462,14 +473,17 @@ static int bld__toggle_val(Bld_Toggle t, Bld_Toggle global) {
     return global == BLD_ON ? 1 : 0;
 }
 
-static void bld__cmd_render_compile(Bld__Cmd* cmd, Bld* b, const Bld_CompileFlags* f, const Bld_LinkFlags* lf) {
-    bld__cmd_appendf(cmd, "%s", b->compile_driver);
+static void bld__cmd_render_compile(Bld__Cmd* cmd, Bld* b, Bld_Compiler* comp,
+                                     const Bld_CompileFlags* f, const Bld_LinkFlags* lf) {
+    bld__cmd_appendf(cmd, "%s", comp->driver);
     Bld_Optimize opt = f->optimize ? f->optimize : b->global_optimize;
-    Bld_Standard std = f->standard ? f->standard : b->global_standard;
     int warnings = (f->warnings == BLD_ON) ? 1 : (f->warnings == BLD_OFF) ? 0 : b->global_warnings;
 
     const char* os = bld__resolve_optimize(opt); if (os[0]) bld__cmd_appendf(cmd, " %s", os);
-    const char* ss = bld__resolve_standard(std); if (ss[0]) bld__cmd_appendf(cmd, " %s", ss);
+    const char* ss = "";
+    if (comp->lang == BLD_LANG_C) ss = bld__resolve_c_standard(comp->c.standard);
+    else if (comp->lang == BLD_LANG_CXX) ss = bld__resolve_cxx_standard(comp->cxx.standard);
+    if (ss[0]) bld__cmd_appendf(cmd, " %s", ss);
     if (!warnings) bld__cmd_appendf(cmd, " -w");
     if (warnings) bld__cmd_appendf(cmd, " -Wall");
     if (f->extra_flags && f->extra_flags[0]) bld__cmd_appendf(cmd, " %s", f->extra_flags);
@@ -519,8 +533,8 @@ static void bld__cmd_append_inputs(Bld__Cmd* cmd, Bld* b, Bld_Step* exit_step) {
     }
 }
 
-static void bld__cmd_render_link(Bld__Cmd* cmd, Bld* b, const Bld_LinkFlags* lf) {
-    bld__cmd_appendf(cmd, "%s", b->compile_driver);
+static void bld__cmd_render_link(Bld__Cmd* cmd, Bld* b, Bld_Compiler* comp, const Bld_LinkFlags* lf) {
+    bld__cmd_appendf(cmd, "%s", comp->driver);
     if (lf) {
         if (bld__toggle_val(lf->debug_info, b->global_link.debug_info)) bld__cmd_appendf(cmd, " -g");
         if (bld__toggle_val(lf->asan, b->global_link.asan)) bld__cmd_appendf(cmd, " -fsanitize=address");
@@ -534,7 +548,6 @@ static void bld__cmd_render_link(Bld__Cmd* cmd, Bld* b, const Bld_LinkFlags* lf)
 
 static Bld_Hash bld__hash_compile_flags(Bld_Hash h, const Bld_CompileFlags* f) {
     h = bld_hash_combine(h, (Bld_Hash){f->optimize});
-    h = bld_hash_combine(h, (Bld_Hash){f->standard});
     h = bld_hash_combine(h, (Bld_Hash){f->warnings});
     if (f->extra_flags) h = bld_hash_combine(h, bld_hash_str(f->extra_flags));
     if (f->defines) for (const char** d = f->defines; *d; d++) h = bld_hash_combine(h, bld_hash_str(*d));
@@ -572,6 +585,19 @@ static Bld_Path bld__resolve_lazy(Bld* b, Bld_LazyPath lp) {
 }
 
 /* ================================================================
+ *  Language inference
+ * ================================================================ */
+
+static Bld_Lang bld__infer_lang(const char* path) {
+    const char* ext = bld_path_ext(bld_path(path));
+    if (!strcmp(ext, ".c") || !strcmp(ext, ".m")) return BLD_LANG_C;
+    if (!strcmp(ext, ".cpp") || !strcmp(ext, ".cc") || !strcmp(ext, ".cxx") ||
+        !strcmp(ext, ".mm") || !strcmp(ext, ".C")) return BLD_LANG_CXX;
+    if (!strcmp(ext, ".s") || !strcmp(ext, ".S")) return BLD_LANG_ASM;
+    return BLD_LANG_C; /* unknown -> C */
+}
+
+/* ================================================================
  *  Obj step (compile .c -> .o)
  * ================================================================ */
 
@@ -580,12 +606,12 @@ typedef struct {
     Bld_Path source; Bld_Path orig_source;
     Bld_LazyPath lazy_source; /* if set, resolved at build time instead of source */
     Bld_CompileFlags compile; Bld_LinkFlags* link; int pic;
+    Bld_Lang lang;
 } Bld__ObjCtx;
 
 /* merge override on top of base: non-zero fields replace */
 static Bld_CompileFlags bld__merge_compile_flags(Bld_CompileFlags base, const Bld_CompileFlags* ov) {
     if (ov->optimize)           base.optimize = ov->optimize;
-    if (ov->standard)           base.standard = ov->standard;
     if (ov->warnings)           base.warnings = ov->warnings;
     if (ov->extra_flags)        base.extra_flags = ov->extra_flags;
     if (ov->defines)            base.defines = ov->defines;
@@ -620,7 +646,8 @@ static Bld_Path bld__obj_source(Bld__ObjCtx* c) {
 /* render compile command prefix (flags + includes, without -c -o -MMD) */
 static void bld__render_obj_cmd(Bld__Cmd* cmd, Bld__ObjCtx* c) {
     Bld_CompileFlags flags = bld__resolve_obj_flags(c);
-    bld__cmd_render_compile(cmd, c->b, &flags, c->link);
+    Bld_Compiler* comp = bld_compiler(c->b, c->lang);
+    bld__cmd_render_compile(cmd, c->b, comp, &flags, c->link);
     if (c->pic) bld__cmd_appendf(cmd, " -fPIC");
     for (size_t i = 0; i < c->parent->include_dirs.count; i++) {
         Bld_Path dir = bld__resolve_lazy(c->b, c->parent->include_dirs.items[i]);
@@ -652,7 +679,11 @@ static Bld_Hash bld__obj_recipe_hash(void* ctx, Bld_Hash h) {
     Bld__ObjCtx* c = ctx;
     Bld_CompileFlags flags = bld__resolve_obj_flags(c);
     Bld_Path src = bld__obj_source(c);
-    h = bld_hash_combine(h, bld_hash_str(c->b->compile_driver));
+    Bld_Compiler* comp = bld_compiler(c->b, c->lang);
+    h = bld_hash_combine(h, comp->identity_hash);
+    /* hash compiler standard */
+    if (comp->lang == BLD_LANG_C) h = bld_hash_combine(h, (Bld_Hash){comp->c.standard});
+    else if (comp->lang == BLD_LANG_CXX) h = bld_hash_combine(h, (Bld_Hash){comp->cxx.standard});
     h = bld_hash_combine(h, bld_hash_str(src.s));
     h = bld_hash_combine(h, bld_hash_file(src));
     h = bld__hash_compile_flags(h, &flags);
@@ -674,7 +705,9 @@ static Bld_Hash bld__obj_recipe_hash(void* ctx, Bld_Hash h) {
 }
 
 static Bld_Step* bld__add_obj(Bld* b, Bld_Target* parent, Bld_Path source,
-                               Bld_CompileFlags compile, Bld_LinkFlags* link, int pic) {
+                               Bld_CompileFlags compile, Bld_LinkFlags* link, int pic,
+                               Bld_Lang target_lang) {
+    Bld_Lang lang = (target_lang != BLD_LANG_AUTO) ? target_lang : bld__infer_lang(source.s);
     Bld_Path abs_src = bld_path_join(b->root, source);
     const char* name = bld_str_fmt("%s:%s", parent->name, bld_path_replace_ext(source, ".o").s);
     Bld_Step* s = bld__alloc_step(b, name, 1);
@@ -682,7 +715,8 @@ static Bld_Step* bld__add_obj(Bld* b, Bld_Target* parent, Bld_Path source,
     bld_da_push(&s->deps, parent->entry);
 
     Bld__ObjCtx* ctx = bld_arena_alloc(sizeof(Bld__ObjCtx));
-    *ctx = (Bld__ObjCtx){.b = b, .parent = parent, .source = abs_src, .orig_source = source, .compile = compile, .link = link, .pic = pic};
+    *ctx = (Bld__ObjCtx){.b = b, .parent = parent, .source = abs_src, .orig_source = source,
+                          .compile = compile, .link = link, .pic = pic, .lang = lang};
     s->action = bld__obj_action;
     s->action_ctx = ctx;
     s->recipe_hash = bld__obj_recipe_hash;
@@ -691,7 +725,9 @@ static Bld_Step* bld__add_obj(Bld* b, Bld_Target* parent, Bld_Path source,
 }
 
 static Bld_Step* bld__add_lazy_obj(Bld* b, Bld_Target* parent, Bld_LazyPath lazy_source,
-                                    Bld_CompileFlags compile, Bld_LinkFlags* link, int pic) {
+                                    Bld_CompileFlags compile, Bld_LinkFlags* link, int pic,
+                                    Bld_Lang target_lang) {
+    Bld_Lang lang = (target_lang != BLD_LANG_AUTO) ? target_lang : bld__infer_lang(lazy_source.path.s);
     const char* src_name = lazy_source.source ? lazy_source.source->name : "gen";
     const char* name = bld_str_fmt("%s:lazy_%s.o", parent->name, src_name);
     Bld_Step* s = bld__alloc_step(b, name, 1);
@@ -703,7 +739,7 @@ static Bld_Step* bld__add_lazy_obj(Bld* b, Bld_Target* parent, Bld_LazyPath lazy
     Bld__ObjCtx* ctx = bld_arena_alloc(sizeof(Bld__ObjCtx));
     *ctx = (Bld__ObjCtx){.b = b, .parent = parent, .source = bld_path(""),
                           .orig_source = bld_path(""), .lazy_source = lazy_source,
-                          .compile = compile, .link = link, .pic = pic};
+                          .compile = compile, .link = link, .pic = pic, .lang = lang};
     s->action = bld__obj_action;
     s->action_ctx = ctx;
     s->recipe_hash = bld__obj_recipe_hash;
@@ -729,12 +765,27 @@ static void bld__materialize_lazy_sources(Bld* b) {
             : &((Bld_Lib*)t)->opts.link;
         int pic = (t->kind == BLD_TGT_LIB) ? 1 : 0;
 
+        Bld_Lang target_lang = (t->kind == BLD_TGT_EXE)
+            ? ((Bld_Exe*)t)->opts.lang : ((Bld_Lib*)t)->opts.lang;
+
         for (size_t j = 0; j < t->lazy_sources.count; j++) {
-            Bld_Step* obj = bld__add_lazy_obj(b, t, t->lazy_sources.items[j], compile, link, pic);
+            Bld_Step* obj = bld__add_lazy_obj(b, t, t->lazy_sources.items[j], compile, link, pic, target_lang);
             bld_da_push(obj_steps, obj);
             bld_da_push(&t->exit->inputs, obj);
         }
     }
+}
+
+/* ================================================================
+ *  Link compiler selection (strongest language: CXX > C > ASM)
+ * ================================================================ */
+
+static Bld_Compiler* bld__link_compiler(Bld* b, Bld_StepList* obj_steps) {
+    for (size_t i = 0; i < obj_steps->count; i++) {
+        Bld__ObjCtx* ctx = obj_steps->items[i]->action_ctx;
+        if (ctx && ctx->lang == BLD_LANG_CXX) return bld_compiler(b, BLD_LANG_CXX);
+    }
+    return bld_compiler(b, BLD_LANG_C);
 }
 
 /* ================================================================
@@ -747,7 +798,8 @@ static Bld_ActionResult bld__link_exe_action(void* ctx, Bld_Path output, Bld_Pat
     (void)depfile;
     Bld__ExeCtx* c = ctx;
     Bld__Cmd cmd = {0};
-    bld__cmd_render_link(&cmd, c->b, &c->exe->opts.link);
+    Bld_Compiler* linker = bld__link_compiler(c->b, &c->exe->obj_steps);
+    bld__cmd_render_link(&cmd, c->b, linker, &c->exe->opts.link);
     bld__cmd_append_inputs(&cmd, c->b, c->exe->target.exit);
     if (c->exe->shared_libs.count > 0) {
         Bld_Path libdir = bld_path_join(c->b->out, bld_path("lib"));
@@ -777,7 +829,8 @@ static Bld_ActionResult bld__link_exe_action(void* ctx, Bld_Path output, Bld_Pat
 static Bld_Hash bld__link_exe_recipe(void* ctx, Bld_Hash h) {
     Bld__ExeCtx* c = ctx;
     h = bld_hash_combine(h, bld_hash_str(c->exe->opts.name));
-    h = bld_hash_combine(h, bld_hash_str(c->b->compile_driver));
+    Bld_Compiler* linker = bld__link_compiler(c->b, &c->exe->obj_steps);
+    h = bld_hash_combine(h, linker->identity_hash);
     h = bld__hash_link_flags(h, &c->exe->opts.link);
     for (size_t i = 0; i < c->exe->shared_libs.count; i++) {
         Bld_Lib* lib = (Bld_Lib*)c->exe->shared_libs.items[i];
@@ -816,7 +869,7 @@ Bld_Target* bld__add_exe(Bld* b, const Bld_ExeOpts* opts) {
 
     if (exe->opts.sources) {
         for (const char** s = exe->opts.sources; *s; s++) {
-            Bld_Step* obj = bld__add_obj(b, &exe->target, bld_path(*s), exe->opts.compile, &exe->opts.link, 0);
+            Bld_Step* obj = bld__add_obj(b, &exe->target, bld_path(*s), exe->opts.compile, &exe->opts.link, 0, exe->opts.lang);
             bld_da_push(&exe->obj_steps, obj);
             bld_da_push(&exe->target.exit->inputs, obj);
         }
@@ -846,7 +899,8 @@ static Bld_ActionResult bld__link_lib_action(void* ctx, Bld_Path output, Bld_Pat
         bld__cmd_append_inputs(&cmd, c->b, c->lib->target.exit);
     } else {
         const char* soname = bld__lib_filename(&c->lib->opts);
-        bld__cmd_render_compile(&cmd, c->b, &c->lib->opts.compile, &c->lib->opts.link);
+        Bld_Compiler* linker = bld__link_compiler(c->b, &c->lib->obj_steps);
+        bld__cmd_render_link(&cmd, c->b, linker, &c->lib->opts.link);
         bld__cmd_appendf(&cmd, " -shared -Wl,-soname,%s", soname);
         bld__cmd_append_inputs(&cmd, c->b, c->lib->target.exit);
         bld__cmd_appendf(&cmd, " -o %s", output.s);
@@ -869,11 +923,14 @@ static Bld_ActionResult bld__link_lib_action(void* ctx, Bld_Path output, Bld_Pat
 static Bld_Hash bld__link_lib_recipe(void* ctx, Bld_Hash h) {
     Bld__LibCtx* c = ctx;
     h = bld_hash_combine(h, bld_hash_str(c->lib->opts.name));
-    h = bld_hash_combine(h, bld_hash_str(c->b->compile_driver));
     h = bld_hash_combine(h, (Bld_Hash){c->lib->opts.shared});
     h = bld__hash_link_flags(h, &c->lib->opts.link);
-    if (!c->lib->opts.shared && c->b->static_link_tool)
+    if (c->lib->opts.shared) {
+        Bld_Compiler* linker = bld__link_compiler(c->b, &c->lib->obj_steps);
+        h = bld_hash_combine(h, linker->identity_hash);
+    } else if (c->b->static_link_tool) {
         h = bld_hash_combine(h, bld_hash_str(c->b->static_link_tool));
+    }
     return h;
 }
 
@@ -900,7 +957,7 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
 
     if (lib->opts.sources) {
         for (const char** s = lib->opts.sources; *s; s++) {
-            Bld_Step* obj = bld__add_obj(b, &lib->target, bld_path(*s), lib->opts.compile, &lib->opts.link, 1);
+            Bld_Step* obj = bld__add_obj(b, &lib->target, bld_path(*s), lib->opts.compile, &lib->opts.link, 1, lib->opts.lang);
             bld_da_push(&lib->obj_steps, obj);
             bld_da_push(&lib->target.exit->inputs, obj);
         }
@@ -1081,17 +1138,49 @@ Bld* bld_new(Bld* parent) {
     b->root = parent->root;
     b->cache = parent->cache;
     b->out = parent->out;
-    b->compile_driver = parent->compile_driver;
+    memcpy(b->compilers, parent->compilers, sizeof(parent->compilers));
     b->static_link_tool = parent->static_link_tool;
     b->global_warnings = parent->global_warnings;
     b->global_optimize = parent->global_optimize;
-    b->global_standard = parent->global_standard;
     b->global_link = parent->global_link;
     b->settings = parent->settings;
     b->settings.silent = 1; /* child builds are silent by default */
     b->argc = parent->argc;
     b->argv = parent->argv;
     return b;
+}
+
+/* ================================================================
+ *  Compiler setters
+ * ================================================================ */
+
+void bld__set_compiler_c(Bld* b, const Bld_CCompilerOpts* opts) {
+    Bld_Compiler* comp = bld_compiler(b, BLD_LANG_C);
+    if (opts->driver) {
+        comp->driver = bld_str_dup(opts->driver);
+        comp->identity_hash = bld_hash_str(comp->driver);
+        comp->available = bld__has_in_path(comp->driver);
+    }
+    if (opts->standard) comp->c.standard = opts->standard;
+}
+
+void bld__set_compiler_cxx(Bld* b, const Bld_CxxCompilerOpts* opts) {
+    Bld_Compiler* comp = bld_compiler(b, BLD_LANG_CXX);
+    if (opts->driver) {
+        comp->driver = bld_str_dup(opts->driver);
+        comp->identity_hash = bld_hash_str(comp->driver);
+        comp->available = bld__has_in_path(comp->driver);
+    }
+    if (opts->standard) comp->cxx.standard = opts->standard;
+}
+
+void bld__set_compiler_asm(Bld* b, const Bld_AsmCompilerOpts* opts) {
+    Bld_Compiler* comp = bld_compiler(b, BLD_LANG_ASM);
+    if (opts->driver) {
+        comp->driver = bld_str_dup(opts->driver);
+        comp->identity_hash = bld_hash_str(comp->driver);
+        comp->available = bld__has_in_path(comp->driver);
+    }
 }
 
 int bld_target_ok(Bld_Target* t) {
@@ -1127,13 +1216,14 @@ typedef struct { Bld* b; const char* snippet; int is_sizeof; } Bld__CheckCtx;
 
 static Bld_Hash bld__check_recipe_hash(void* ctx, Bld_Hash h) {
     Bld__CheckCtx* c = ctx;
-    h = bld_hash_combine(h, bld_hash_str(c->b->compile_driver));
+    h = bld_hash_combine(h, bld_compiler(c->b, BLD_LANG_C)->identity_hash);
     h = bld_hash_combine(h, bld_hash_str(c->snippet));
     return h;
 }
 
 static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     Bld__CheckCtx* c = ctx;
+    const char* cc = bld_compiler(c->b, BLD_LANG_C)->driver;
 
     /* write snippet to stable path (not tmp — survives between runs for depfile caching) */
     Bld_Hash snip_hash = bld_hash_str(c->snippet);
@@ -1147,7 +1237,7 @@ static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path d
     if (!c->is_sizeof) {
         /* compile only — success = "1", failure = "0" */
         const char* cmd = bld_str_fmt("%s -xc %s -c -o /dev/null -MMD -MF %s 2>/dev/null",
-                                       c->b->compile_driver, src_path,
+                                       cc, src_path,
                                        depfile.s && depfile.s[0] ? depfile.s : "/dev/null");
         int rc = system(cmd);
         bld_fs_write_file(output, rc == 0 ? "1" : "0", 1);
@@ -1155,7 +1245,7 @@ static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path d
         /* compile + run — output is the printed value, or "0" on failure */
         Bld_Path bin = bld__new_tmp(c->b);
         const char* cmd = bld_str_fmt("%s -xc %s -o %s 2>/dev/null && %s",
-                                       c->b->compile_driver, src_path, bin.s, bin.s);
+                                       cc, src_path, bin.s, bin.s);
         FILE* f = popen(cmd, "r");
         char buf[64] = {0};
         if (f) {

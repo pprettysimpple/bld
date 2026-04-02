@@ -141,11 +141,32 @@ typedef enum {
 } Bld_Optimize;
 
 typedef enum {
-    BLD_STD_DEFAULT = 0,
-    BLD_STD_C90, BLD_STD_C99, BLD_STD_C11, BLD_STD_C17, BLD_STD_C23,
-    BLD_STD_GNU99, BLD_STD_GNU11, BLD_STD_GNU17, BLD_STD_GNU23,
-    BLD_STD_CXX11, BLD_STD_CXX14, BLD_STD_CXX17, BLD_STD_CXX20, BLD_STD_CXX23,
-} Bld_Standard;
+    BLD_LANG_AUTO = 0, BLD_LANG_C, BLD_LANG_CXX, BLD_LANG_ASM, BLD_LANG__COUNT
+} Bld_Lang;
+
+typedef enum {
+    BLD_C_DEFAULT = 0,
+    BLD_C_90, BLD_C_99, BLD_C_11, BLD_C_17, BLD_C_23,
+    BLD_C_GNU90, BLD_C_GNU99, BLD_C_GNU11, BLD_C_GNU17, BLD_C_GNU23,
+} Bld_CStd;
+
+typedef enum {
+    BLD_CXX_DEFAULT = 0,
+    BLD_CXX_11, BLD_CXX_14, BLD_CXX_17, BLD_CXX_20, BLD_CXX_23,
+    BLD_CXX_GNU11, BLD_CXX_GNU14, BLD_CXX_GNU17, BLD_CXX_GNU20, BLD_CXX_GNU23,
+} Bld_CxxStd;
+
+typedef struct {
+    Bld_Lang    lang;
+    const char* driver;
+    Bld_Hash    identity_hash;
+    int         available;
+    union {
+        struct { Bld_CStd standard; } c;
+        struct { Bld_CxxStd standard; } cxx;
+        struct { int _pad; } as;
+    };
+} Bld_Compiler;
 
 typedef enum { BLD_UNSET = 0, BLD_ON, BLD_OFF } Bld_Toggle;
 
@@ -220,7 +241,6 @@ typedef struct {
 
 typedef struct {
     Bld_Optimize   optimize;
-    Bld_Standard   standard;
     Bld_Toggle     warnings;
     const char*    extra_flags;
     const char**   defines;             /* NULL-terminated */
@@ -286,6 +306,7 @@ typedef struct {
     const char*      desc;
     const char*      output_name; /* override output filename (default: name) */
     const char**     sources;
+    Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
     Bld_CompileFlags compile;
     Bld_LinkFlags    link;
 } Bld_ExeOpts;
@@ -295,6 +316,7 @@ typedef struct {
     const char*      desc;
     const char*      output_name; /* override lib filename base (default: name) */
     const char**     sources;
+    Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
     Bld_CompileFlags compile;
     Bld_LinkFlags    link;
     int              shared;  /* 0 = static (default), 1 = shared */
@@ -376,9 +398,8 @@ typedef struct {
     Bld_Path cache;
     Bld_Path out;
 
-    const char*    compile_driver;
+    Bld_Compiler compilers[BLD_LANG__COUNT - 1]; /* [0]=C, [1]=CXX, [2]=ASM */
     Bld_Optimize   global_optimize;
-    Bld_Standard   global_standard;
     int            global_warnings;
     Bld_LinkFlags  global_link;
 
@@ -404,6 +425,25 @@ typedef struct {
     uint64_t progress_current;
     uint64_t progress_total;
 } Bld;
+
+static inline Bld_Compiler* bld_compiler(Bld* b, Bld_Lang lang) {
+    assert(lang >= BLD_LANG_C && lang < BLD_LANG__COUNT);
+    return &b->compilers[lang - 1];
+}
+
+/* ===== Compiler setter API ===== */
+
+typedef struct { const char* driver; Bld_CStd standard; } Bld_CCompilerOpts;
+typedef struct { const char* driver; Bld_CxxStd standard; } Bld_CxxCompilerOpts;
+typedef struct { const char* driver; } Bld_AsmCompilerOpts;
+
+void bld__set_compiler_c(Bld* b, const Bld_CCompilerOpts* opts);
+void bld__set_compiler_cxx(Bld* b, const Bld_CxxCompilerOpts* opts);
+void bld__set_compiler_asm(Bld* b, const Bld_AsmCompilerOpts* opts);
+
+#define bld_set_compiler_c(b, ...)   bld__set_compiler_c((b), &(Bld_CCompilerOpts){__VA_ARGS__})
+#define bld_set_compiler_cxx(b, ...) bld__set_compiler_cxx((b), &(Bld_CxxCompilerOpts){__VA_ARGS__})
+#define bld_set_compiler_asm(b, ...) bld__set_compiler_asm((b), &(Bld_AsmCompilerOpts){__VA_ARGS__})
 
 /* ===== API ===== */
 

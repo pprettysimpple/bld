@@ -35,7 +35,10 @@
 #define CompileFlags Bld_CompileFlags
 #define LinkFlags   Bld_LinkFlags
 #define Optimize    Bld_Optimize
-#define Standard    Bld_Standard
+#define Lang        Bld_Lang
+#define CStd        Bld_CStd
+#define CxxStd      Bld_CxxStd
+#define Compiler    Bld_Compiler
 #define Toggle      Bld_Toggle
 #define ActionFn    Bld_ActionFn
 #define RecipeHashFn Bld_RecipeHashFn
@@ -49,21 +52,31 @@
 #define OPT_O3     BLD_OPT_O3
 #define OPT_Os     BLD_OPT_Os
 #define OPT_OFAST  BLD_OPT_OFAST
-#define STD_DEFAULT BLD_STD_DEFAULT
-#define STD_C90    BLD_STD_C90
-#define STD_C99    BLD_STD_C99
-#define STD_C11    BLD_STD_C11
-#define STD_C17    BLD_STD_C17
-#define STD_C23    BLD_STD_C23
-#define STD_GNU99  BLD_STD_GNU99
-#define STD_GNU11  BLD_STD_GNU11
-#define STD_GNU17  BLD_STD_GNU17
-#define STD_GNU23  BLD_STD_GNU23
-#define STD_CXX11  BLD_STD_CXX11
-#define STD_CXX14  BLD_STD_CXX14
-#define STD_CXX17  BLD_STD_CXX17
-#define STD_CXX20  BLD_STD_CXX20
-#define STD_CXX23  BLD_STD_CXX23
+#define LANG_AUTO  BLD_LANG_AUTO
+#define LANG_C     BLD_LANG_C
+#define LANG_CXX   BLD_LANG_CXX
+#define LANG_ASM   BLD_LANG_ASM
+#define C_DEFAULT  BLD_C_DEFAULT
+#define C_90       BLD_C_90
+#define C_99       BLD_C_99
+#define C_11       BLD_C_11
+#define C_17       BLD_C_17
+#define C_23       BLD_C_23
+#define C_GNU90    BLD_C_GNU90
+#define C_GNU99    BLD_C_GNU99
+#define C_GNU11    BLD_C_GNU11
+#define C_GNU17    BLD_C_GNU17
+#define C_GNU23    BLD_C_GNU23
+#define CXX_11     BLD_CXX_11
+#define CXX_14     BLD_CXX_14
+#define CXX_17     BLD_CXX_17
+#define CXX_20     BLD_CXX_20
+#define CXX_23     BLD_CXX_23
+#define CXX_GNU11  BLD_CXX_GNU11
+#define CXX_GNU14  BLD_CXX_GNU14
+#define CXX_GNU17  BLD_CXX_GNU17
+#define CXX_GNU20  BLD_CXX_GNU20
+#define CXX_GNU23  BLD_CXX_GNU23
 #define TOGGLE_UNSET BLD_UNSET
 #define TOGGLE_ON    BLD_ON
 #define TOGGLE_OFF   BLD_OFF
@@ -115,6 +128,11 @@
 #define hash_file              bld_hash_file
 #define hash_dir               bld_hash_dir
 
+/* compiler setters */
+#define set_compiler_c(b, ...)   bld_set_compiler_c((b), __VA_ARGS__)
+#define set_compiler_cxx(b, ...) bld_set_compiler_cxx((b), __VA_ARGS__)
+#define set_compiler_asm(b, ...) bld_set_compiler_asm((b), __VA_ARGS__)
+
 /* build api */
 #define add_exe(b, ...)          bld_add_exe((b), __VA_ARGS__)
 #define add_lib(b, ...)          bld_add_lib((b), __VA_ARGS__)
@@ -140,5 +158,25 @@
 #define option_str               bld_option_str
 #define target_ok                bld_target_ok
 #define target_artifact          bld_target_artifact
+
+/* feature checks */
+#define ChecksContext            Bld_ChecksContext
+#define checks_new               bld_checks_new
+#define checks_set_context(c, ...) bld_checks_set_context((c), __VA_ARGS__)
+#define checks_header            bld_checks_header
+#define checks_func              bld_checks_func
+#define checks_sizeof            bld_checks_sizeof
+#define checks_compile           bld_checks_compile
+#define checks_func_link         bld_checks_func_link
+#define checks_link              bld_checks_link
+#define checks_has_flag          bld_checks_has_flag
+#define checks_has_link_flag     bld_checks_has_link_flag
+#define checks_compute_int       bld_checks_compute_int
+#define checks_get_define        bld_checks_get_define
+#define checks_has_type          bld_checks_has_type
+#define checks_has_member        bld_checks_has_member
+#define checks_run               bld_checks_run
+#define checks_write             bld_checks_write
+#define checks_write_template    bld_checks_write_template
 
 #endif /* BLD_STRIP_PREFIX */

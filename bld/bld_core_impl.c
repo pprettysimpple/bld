@@ -640,3 +640,20 @@ const char** bld_files_merge(const char** a, const char** b) {
     return r;
 }
 
+/* ================================================================
+ *  Tool detection
+ * ================================================================ */
+
+static int bld__has_in_path(const char* name) {
+    const char* path_env = getenv("PATH");
+    if (!path_env) return 0;
+    const char* p = path_env;
+    while (*p) {
+        const char* sep = strchr(p, ':');
+        size_t len = sep ? (size_t)(sep - p) : strlen(p);
+        if (bld_fs_is_file(bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name)))) return 1;
+        p += len + (sep ? 1 : 0);
+    }
+    return 0;
+}
+
