@@ -433,8 +433,18 @@ static void bld__fs_remove_all_impl(const char* path) {
 void bld_fs_remove_all(Bld_Path p) { bld__fs_remove_all_impl(p.s); }
 
 void bld_fs_rename(Bld_Path from, Bld_Path to) {
-    if (rename(from.s, to.s) != 0)
-        bld_panic("rename %s -> %s: %s\n", from.s, to.s, strerror(errno));
+    if (rename(from.s, to.s) == 0) return;
+    if (errno == EXDEV) {
+        /* cross-filesystem: copy + delete */
+        struct stat st;
+        if (stat(from.s, &st) != 0)
+            bld_panic("rename (cross-fs) stat %s: %s\n", from.s, strerror(errno));
+        if (S_ISDIR(st.st_mode)) bld_fs_copy_r(from, to);
+        else bld_fs_copy_file(from, to);
+        bld__fs_remove_all_impl(from.s);
+        return;
+    }
+    bld_panic("rename %s -> %s: %s\n", from.s, to.s, strerror(errno));
 }
 
 void bld_fs_copy_file(Bld_Path from, Bld_Path to) {
