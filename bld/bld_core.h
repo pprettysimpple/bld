@@ -201,15 +201,15 @@ struct Bld_Step {
 
     Bld_ActionFn     action;
     void*            action_ctx;
-    Bld_RecipeHashFn recipe_hash;
-    void*            recipe_hash_ctx;
+    Bld_RecipeHashFn hash_fn;
+    void*            hash_fn_ctx;
 
     int has_depfile;
     int content_hash;  /* use output content hash instead of recipe hash for downstream */
 
     /* computed at build time */
-    Bld_Hash recipe_hash_value;
-    Bld_Hash full_hash_value;
+    Bld_Hash input_hash;
+    Bld_Hash cache_key;
     int           hash_valid;
     Bld_StepState state;
 

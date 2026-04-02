@@ -514,7 +514,7 @@ static Bld_Path bld__cache_art_meta(Bld* b, Bld_Hash h) {
     return bld_path_join(bld_path_join(b->cache, bld_path("arts")), bld_path_fmt("%" PRIu64 ".meta", h.value));
 }
 
-static Bld_Path bld__step_artifact(Bld* b, Bld_Step* s) { return bld__cache_art(b, s->full_hash_value); }
+static Bld_Path bld__step_artifact(Bld* b, Bld_Step* s) { return bld__cache_art(b, s->cache_key); }
 static Bld_Path bld__target_artifact(Bld* b, Bld_Target* t) { return bld__step_artifact(b, t->exit); }
 
 static Bld_Path bld__step_depfile_cache(Bld* b, Bld_Step* s) {
@@ -537,14 +537,14 @@ static void bld__cache_write_meta(Bld* b, Bld_Step* s) {
     Bld_Path art = bld__step_artifact(b, s);
     if (!bld_fs_exists(art)) return;
     Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
-    Bld_Path meta = bld__cache_art_meta(b, s->full_hash_value);
+    Bld_Path meta = bld__cache_art_meta(b, s->cache_key);
     const char* data = bld_str_fmt("%" PRIu64, ch.value);
     bld_fs_write_file(meta, data, strlen(data));
 }
 
 static int bld__cache_validate(Bld* b, Bld_Step* s) {
     Bld_Path art = bld__step_artifact(b, s);
-    Bld_Path meta = bld__cache_art_meta(b, s->full_hash_value);
+    Bld_Path meta = bld__cache_art_meta(b, s->cache_key);
     if (!bld_fs_exists(meta)) return 0;
     size_t len;
     const char* data = bld_fs_read_file(meta, &len);
@@ -572,7 +572,7 @@ static void bld__cache_store_depfile(Bld* b, Bld_Step* step, Bld_Path tmp_dep) {
     Bld_Path cached_dep = bld__step_depfile_cache(b, step);
     bld_fs_mkdir_p(bld_path_parent(cached_dep));
     bld_fs_rename(tmp_dep, cached_dep);
-    step->full_hash_value = bld_hash_combine(step->recipe_hash_value,
+    step->cache_key = bld_hash_combine(step->input_hash,
                                               bld__hash_depfile_contents(cached_dep));
 }
 
@@ -585,8 +585,8 @@ static void bld__cache_store_artifact(Bld* b, Bld_Step* step, Bld_Path tmp_out) 
     /* early cutoff: if content differs from recipe hash, use content hash as key */
     if (step->content_hash && bld_fs_exists(expected)) {
         Bld_Hash ch = bld_fs_is_dir(expected) ? bld_hash_dir(expected) : bld_hash_file(expected);
-        if (ch.value != step->full_hash_value.value) {
-            step->full_hash_value = ch;
+        if (ch.value != step->cache_key.value) {
+            step->cache_key = ch;
             Bld_Path new_art = bld__step_artifact(b, step);
             if (bld_fs_exists(new_art)) bld_fs_remove_all(new_art);
             bld_fs_mkdir_p(bld_path_parent(new_art));
@@ -789,8 +789,8 @@ static Bld_Step* bld__add_obj(Bld* b, Bld_Target* parent, Bld_Path source,
                           .compile = compile, .link = link, .pic = pic, .lang = lang};
     s->action = bld__obj_action;
     s->action_ctx = ctx;
-    s->recipe_hash = bld__obj_recipe_hash;
-    s->recipe_hash_ctx = ctx;
+    s->hash_fn = bld__obj_recipe_hash;
+    s->hash_fn_ctx = ctx;
     return s;
 }
 
@@ -812,8 +812,8 @@ static Bld_Step* bld__add_lazy_obj(Bld* b, Bld_Target* parent, Bld_LazyPath lazy
                           .compile = compile, .link = link, .pic = pic, .lang = lang};
     s->action = bld__obj_action;
     s->action_ctx = ctx;
-    s->recipe_hash = bld__obj_recipe_hash;
-    s->recipe_hash_ctx = ctx;
+    s->hash_fn = bld__obj_recipe_hash;
+    s->hash_fn_ctx = ctx;
     return s;
 }
 
@@ -905,7 +905,7 @@ static Bld_Hash bld__link_exe_recipe(void* ctx, Bld_Hash h) {
     for (size_t i = 0; i < c->exe->shared_libs.count; i++) {
         Bld_Lib* lib = (Bld_Lib*)c->exe->shared_libs.items[i];
         h = bld_hash_combine(h, bld_hash_str(lib->opts.name));
-        h = bld_hash_combine(h, lib->target.exit->full_hash_value);
+        h = bld_hash_combine(h, lib->target.exit->cache_key);
     }
     for (size_t i = 0; i < c->exe->resolved_ext_deps.count; i++) {
         Bld_Dep* d = c->exe->resolved_ext_deps.items[i];
@@ -934,8 +934,8 @@ Bld_Target* bld__add_exe(Bld* b, const Bld_ExeOpts* opts) {
     *ctx = (Bld__ExeCtx){.b = b, .exe = exe};
     exe->target.exit->action = bld__link_exe_action;
     exe->target.exit->action_ctx = ctx;
-    exe->target.exit->recipe_hash = bld__link_exe_recipe;
-    exe->target.exit->recipe_hash_ctx = ctx;
+    exe->target.exit->hash_fn = bld__link_exe_recipe;
+    exe->target.exit->hash_fn_ctx = ctx;
 
     if (exe->opts.sources) {
         for (const char** s = exe->opts.sources; *s; s++) {
@@ -1015,8 +1015,8 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
     *ctx = (Bld__LibCtx){.b = b, .lib = lib};
     lib->target.exit->action = bld__link_lib_action;
     lib->target.exit->action_ctx = ctx;
-    lib->target.exit->recipe_hash = bld__link_lib_recipe;
-    lib->target.exit->recipe_hash_ctx = ctx;
+    lib->target.exit->hash_fn = bld__link_lib_recipe;
+    lib->target.exit->hash_fn_ctx = ctx;
 
     if (lib->opts.sources) {
         for (const char** s = lib->opts.sources; *s; s++) {
@@ -1058,8 +1058,8 @@ Bld_Target* bld__add_step(Bld* b, const Bld_StepOpts* opts) {
     if (opts->watch) {
         Bld__StepHashCtx* ctx = bld_arena_alloc(sizeof(Bld__StepHashCtx));
         *ctx = (Bld__StepHashCtx){.b = b, .watch = bld__dup_strarray(opts->watch)};
-        t->exit->recipe_hash = bld__step_watch_hash;
-        t->exit->recipe_hash_ctx = ctx;
+        t->exit->hash_fn = bld__step_watch_hash;
+        t->exit->hash_fn_ctx = ctx;
     }
     return t;
 }
@@ -1345,8 +1345,8 @@ static void bld__checks_add(Bld_Checks* c, const char* define_name, const char* 
         .action_ctx = ctx,
         .has_depfile = !is_sizeof,
     });
-    ch->target->exit->recipe_hash = bld__check_recipe_hash;
-    ch->target->exit->recipe_hash_ctx = ctx;
+    ch->target->exit->hash_fn = bld__check_recipe_hash;
+    ch->target->exit->hash_fn_ctx = ctx;
     ch->target->exit->content_hash = 0; /* checks should cache normally, not re-run every time */
 }
 

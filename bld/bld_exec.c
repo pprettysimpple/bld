@@ -30,20 +30,20 @@ static void bld__compute_step_hash(Bld* b, Bld_Step* step) {
     Bld_Hash h = {0};
     for (size_t i = 0; i < step->deps.count; i++)
         if (step->deps.items[i]->hash_valid)
-            h = bld_hash_combine_unordered(h, step->deps.items[i]->full_hash_value);
+            h = bld_hash_combine_unordered(h, step->deps.items[i]->cache_key);
     for (size_t i = 0; i < step->inputs.count; i++)
         if (step->inputs.items[i]->hash_valid)
-            h = bld_hash_combine_unordered(h, step->inputs.items[i]->full_hash_value);
-    if (step->recipe_hash)
-        h = step->recipe_hash(step->recipe_hash_ctx, h);
-    step->recipe_hash_value = h;
+            h = bld_hash_combine_unordered(h, step->inputs.items[i]->cache_key);
+    if (step->hash_fn)
+        h = step->hash_fn(step->hash_fn_ctx, h);
+    step->input_hash = h;
 
     Bld_Hash full_h = h;
     Bld_Path cached_dep = bld__step_depfile_cache(b, step);
     int have_cached_depfile = step->has_depfile && bld_fs_exists(cached_dep);
     if (have_cached_depfile)
         full_h = bld_hash_combine(h, bld__hash_depfile_contents(cached_dep));
-    step->full_hash_value = full_h;
+    step->cache_key = full_h;
     step->hash_valid = 1;
 }
 
