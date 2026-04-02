@@ -264,16 +264,16 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
     /* C compiler */
     const char *cc_env = getenv("CC"), *cc = cc_env ? cc_env : "cc";
     b->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
-                                      .identity_hash = bld_hash_str(cc), .available = 1};
+                                      .identity_hash = bld__make_identity_hash(cc), .available = 1};
     /* C++ compiler */
     const char *cxx_env = getenv("CXX"), *cxx = cxx_env ? cxx_env : "c++";
     b->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cxx,
-                                      .identity_hash = bld_hash_str(cxx),
+                                      .identity_hash = bld__make_identity_hash(cxx),
                                       .available = bld__has_in_path(cxx) || cxx_env != NULL};
     /* ASM assembler (falls back to C compiler) */
     const char *as_env = getenv("AS"), *as_drv = as_env ? as_env : cc;
     b->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
-                                      .identity_hash = bld_hash_str(as_drv), .available = 1};
+                                      .identity_hash = bld__make_identity_hash(as_drv), .available = 1};
 
     if (bld__has_in_path("llvm-ar")) b->static_link_tool = "llvm-ar";
     else if (bld__has_in_path("ar")) b->static_link_tool = "ar";

@@ -1151,7 +1151,7 @@ void bld__set_compiler_c(Bld* b, const Bld_CCompilerOpts* opts) {
     Bld_Compiler* comp = bld_compiler(b, BLD_LANG_C);
     if (opts->driver) {
         comp->driver = bld_str_dup(opts->driver);
-        comp->identity_hash = bld_hash_str(comp->driver);
+        comp->identity_hash = bld__make_identity_hash(comp->driver);
         comp->available = bld__has_in_path(comp->driver);
     }
     if (opts->standard) comp->c.standard = opts->standard;
@@ -1161,7 +1161,7 @@ void bld__set_compiler_cxx(Bld* b, const Bld_CxxCompilerOpts* opts) {
     Bld_Compiler* comp = bld_compiler(b, BLD_LANG_CXX);
     if (opts->driver) {
         comp->driver = bld_str_dup(opts->driver);
-        comp->identity_hash = bld_hash_str(comp->driver);
+        comp->identity_hash = bld__make_identity_hash(comp->driver);
         comp->available = bld__has_in_path(comp->driver);
     }
     if (opts->standard) comp->cxx.standard = opts->standard;
@@ -1171,7 +1171,7 @@ void bld__set_compiler_asm(Bld* b, const Bld_AsmCompilerOpts* opts) {
     Bld_Compiler* comp = bld_compiler(b, BLD_LANG_ASM);
     if (opts->driver) {
         comp->driver = bld_str_dup(opts->driver);
-        comp->identity_hash = bld_hash_str(comp->driver);
+        comp->identity_hash = bld__make_identity_hash(comp->driver);
         comp->available = bld__has_in_path(comp->driver);
     }
 }

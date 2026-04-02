@@ -644,6 +644,29 @@ const char** bld_files_merge(const char** a, const char** b) {
  *  Tool detection
  * ================================================================ */
 
+/* capture first line of "driver --version" output, return hash */
+static Bld_Hash bld__compiler_version_hash(const char* driver) {
+    const char* cmd = bld_str_fmt("%s --version 2>/dev/null", driver);
+    FILE* f = popen(cmd, "r");
+    if (!f) return (Bld_Hash){0};
+    char buf[256] = {0};
+    if (fgets(buf, sizeof(buf), f)) {
+        /* strip trailing newline */
+        size_t n = strlen(buf);
+        if (n > 0 && buf[n-1] == '\n') buf[n-1] = '\0';
+    }
+    pclose(f);
+    if (!buf[0]) return (Bld_Hash){0};
+    return bld_hash_str(buf);
+}
+
+static Bld_Hash bld__make_identity_hash(const char* driver) {
+    Bld_Hash h = bld_hash_str(driver);
+    Bld_Hash ver = bld__compiler_version_hash(driver);
+    if (ver.value) h = bld_hash_combine(h, ver);
+    return h;
+}
+
 static int bld__has_in_path(const char* name) {
     const char* path_env = getenv("PATH");
     if (!path_env) return 0;
