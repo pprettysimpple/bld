@@ -6,6 +6,7 @@
  *   ./b build                         — build libbld.a
  *   ./b amalgamate                    — generate bld_amalgamated.h
  *   ./b install [--prefix /usr/local] — install bld.h + libbld.a
+ *   ./b selftest                     — run integration tests
  */
 #define BLD_IMPLEMENTATION
 #define BLD_STRIP_PREFIX
@@ -65,6 +66,16 @@ static Bld_ActionResult gen_amalgamated(void* ctx, Bld_Path output, Bld_Path dep
     return BLD_ACTION_OK;
 }
 
+/* ---- Self-tests ---- */
+
+static Bld_ActionResult run_selftests(void* ctx, Bld_Path output, Bld_Path depfile) {
+    (void)output; (void)depfile;
+    Bld* b = ctx;
+    const char* cmd = bld_str_fmt("bash \"%s/tests/run_all.sh\" \"%s\"", b->root.s, b->root.s);
+    int rc = system(cmd);
+    return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
+}
+
 /* ---- Configure ---- */
 
 void configure(Bld* b) {
@@ -97,4 +108,11 @@ void configure(Bld* b) {
 
     add_install_lib(b, lib);
     add_install(b, amalg, bld_path("include"));
+
+    Target* selftest = add_step(b,
+        .name = "selftest",
+        .desc = "Run integration tests",
+        .action = run_selftests,
+        .action_ctx = b);
+    selftest->exit->phony = 1;
 }
