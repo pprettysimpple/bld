@@ -538,12 +538,13 @@ static Bld_Path bld__cache_tmp(Bld* b) {
 
 /* ---- Content validation ---- */
 
-static void bld__cache_write_meta(Bld* b, Bld_Step* s) {
-    Bld_Path art = bld__step_artifact(b, s);
-    if (!bld_fs_exists(art)) return;
-    Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
-    Bld_Path meta = bld__cache_art_meta(b, s->cache_key);
-    const char* data = bld_str_fmt("%" PRIu64, ch.value);
+static Bld_Hash bld__hash_artifact(Bld_Path art) {
+    return bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
+}
+
+static void bld__cache_write_meta(Bld* b, Bld_Hash key, Bld_Hash content_hash) {
+    Bld_Path meta = bld__cache_art_meta(b, key);
+    const char* data = bld_str_fmt("%" PRIu64, content_hash.value);
     bld_fs_write_file(meta, data, strlen(data));
 }
 
@@ -555,7 +556,7 @@ static int bld__cache_validate(Bld* b, Bld_Step* s) {
     const char* data = bld_fs_read_file(meta, &len);
     uint64_t stored = 0;
     if (sscanf(data, "%" SCNu64, &stored) != 1) return 0;
-    Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
+    Bld_Hash ch = bld__hash_artifact(art);
     return ch.value == stored;
 }
 
@@ -587,18 +588,17 @@ static void bld__cache_store_artifact(Bld* b, Bld_Step* step, Bld_Path tmp_out) 
         bld_fs_mkdir_p(bld_path_parent(expected));
         bld_fs_rename(tmp_out, expected);
     }
-    /* early cutoff: if content differs from recipe hash, use content hash as key */
-    if (step->content_hash && bld_fs_exists(expected)) {
-        Bld_Hash ch = bld_fs_is_dir(expected) ? bld_hash_dir(expected) : bld_hash_file(expected);
-        if (ch.value != step->cache_key.value) {
-            step->cache_key = ch;
-            Bld_Path new_art = bld__step_artifact(b, step);
-            if (bld_fs_exists(new_art)) bld_fs_remove_all(new_art);
-            bld_fs_mkdir_p(bld_path_parent(new_art));
-            bld_fs_rename(expected, new_art);
-        }
+    if (!bld_fs_exists(expected)) return;
+    Bld_Hash ch = bld__hash_artifact(expected);
+    /* early cutoff: if content differs from input hash, use content hash as key */
+    if (step->content_hash && ch.value != step->cache_key.value) {
+        step->cache_key = ch;
+        Bld_Path new_art = bld__step_artifact(b, step);
+        if (bld_fs_exists(new_art)) bld_fs_remove_all(new_art);
+        bld_fs_mkdir_p(bld_path_parent(new_art));
+        bld_fs_rename(expected, new_art);
     }
-    bld__cache_write_meta(b, step);
+    bld__cache_write_meta(b, step->cache_key, ch);
 }
 
 static void bld__cmd_append_inputs(Bld__Cmd* cmd, Bld* b, Bld_Step* exit_step) {
@@ -1251,33 +1251,27 @@ Bld* bld_new(Bld* parent) {
  *  Compiler setters
  * ================================================================ */
 
+static void bld__set_driver(Bld_Compiler* comp, const char* driver) {
+    comp->driver = bld_str_dup(driver);
+    comp->identity_hash = bld__make_identity_hash(driver);
+    comp->available = bld__has_in_path(driver);
+}
+
 void bld__set_compiler_c(Bld* b, const Bld_CCompilerOpts* opts) {
     Bld_Compiler* comp = bld_compiler(b, BLD_LANG_C);
-    if (opts->driver) {
-        comp->driver = bld_str_dup(opts->driver);
-        comp->identity_hash = bld__make_identity_hash(comp->driver);
-        comp->available = bld__has_in_path(comp->driver);
-    }
+    if (opts->driver) bld__set_driver(comp, opts->driver);
     if (opts->standard) comp->c.standard = opts->standard;
 }
 
 void bld__set_compiler_cxx(Bld* b, const Bld_CxxCompilerOpts* opts) {
     Bld_Compiler* comp = bld_compiler(b, BLD_LANG_CXX);
-    if (opts->driver) {
-        comp->driver = bld_str_dup(opts->driver);
-        comp->identity_hash = bld__make_identity_hash(comp->driver);
-        comp->available = bld__has_in_path(comp->driver);
-    }
+    if (opts->driver) bld__set_driver(comp, opts->driver);
     if (opts->standard) comp->cxx.standard = opts->standard;
 }
 
 void bld__set_compiler_asm(Bld* b, const Bld_AsmCompilerOpts* opts) {
     Bld_Compiler* comp = bld_compiler(b, BLD_LANG_ASM);
-    if (opts->driver) {
-        comp->driver = bld_str_dup(opts->driver);
-        comp->identity_hash = bld__make_identity_hash(comp->driver);
-        comp->available = bld__has_in_path(comp->driver);
-    }
+    if (opts->driver) bld__set_driver(comp, opts->driver);
 }
 
 int bld_target_ok(Bld_Target* t) {

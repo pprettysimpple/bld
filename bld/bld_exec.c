@@ -47,8 +47,6 @@ static void bld__compute_step_hash(Bld* b, Bld_Step* step) {
     step->hash_valid = 1;
 }
 
-/* bld__cache_has() is defined in bld_build.c */
-
 /* ---- Perform step ---- */
 
 static void bld__perform_step(Bld* b, Bld_Step* step) {

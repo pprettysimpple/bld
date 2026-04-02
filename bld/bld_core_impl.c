@@ -342,6 +342,13 @@ Bld_Hash bld_hash_file(Bld_Path p) {
     if (len == 0) return (Bld_Hash){0};
     int fd = open(p.s, O_RDONLY);
     if (fd < 0) bld_panic("hash_file: open %s: %s\n", p.s, strerror(errno));
+    if (len <= 4096) {
+        char buf[4096];
+        ssize_t n = read(fd, buf, len);
+        close(fd);
+        if (n < 0 || (size_t)n != len) bld_panic("hash_file: read %s: %s\n", p.s, strerror(errno));
+        return (Bld_Hash){XXH3_64bits(buf, len)};
+    }
     void* data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED) { close(fd); bld_panic("hash_file: mmap %s: %s\n", p.s, strerror(errno)); }
     Bld_Hash h = {XXH3_64bits(data, len)};

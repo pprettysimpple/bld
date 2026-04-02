@@ -41,7 +41,8 @@
 #define Compiler    Bld_Compiler
 #define Toggle      Bld_Toggle
 #define ActionFn    Bld_ActionFn
-#define RecipeHashFn Bld_RecipeHashFn
+#define HashFn       Bld_HashFn
+#define RecipeHashFn Bld_HashFn
 #define TargetKind  Bld_TargetKind
 
 /* enums */

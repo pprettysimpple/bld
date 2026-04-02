@@ -178,7 +178,7 @@ typedef struct Bld_Target Bld_Target;
 
 typedef enum { BLD_ACTION_OK = 0, BLD_ACTION_FAILED = 1 } Bld_ActionResult;
 typedef Bld_ActionResult (*Bld_ActionFn)(void* ctx, Bld_Path output, Bld_Path depfile);
-typedef Bld_Hash (*Bld_RecipeHashFn)(void* ctx, Bld_Hash current);
+typedef Bld_Hash (*Bld_HashFn)(void* ctx, Bld_Hash current);
 
 typedef enum {
     BLD_STEP_PENDING = 0,
@@ -202,7 +202,7 @@ struct Bld_Step {
 
     Bld_ActionFn     action;
     void*            action_ctx;
-    Bld_RecipeHashFn hash_fn;
+    Bld_HashFn hash_fn;
     void*            hash_fn_ctx;
 
     int has_depfile;
