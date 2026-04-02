@@ -911,13 +911,6 @@ static Bld_ActionResult bld__link_lib_action(void* ctx, Bld_Path output, Bld_Pat
     int rc = system(cmd.items);
     if (rc != 0) return BLD_ACTION_FAILED;
     return BLD_ACTION_OK;
-    /* copy shared lib to output dir so executables can find it at runtime */
-    if (c->lib->opts.shared) {
-        Bld_Path dst = bld_path_join(bld_path_join(c->b->out, bld_path("lib")),
-                                     bld_path(bld__lib_filename(&c->lib->opts)));
-        bld_fs_mkdir_p(bld_path_parent(dst));
-        bld_fs_copy_file(output, dst);
-    }
 }
 
 static Bld_Hash bld__link_lib_recipe(void* ctx, Bld_Hash h) {
