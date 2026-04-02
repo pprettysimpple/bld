@@ -150,6 +150,16 @@ const char* bld_str_join(const Bld_Strings* parts, const char* sep) {
     return buf;
 }
 
+const char** bld_dup_strarray(const char** arr) {
+    if (!arr) return NULL;
+    size_t n = 0;
+    while (arr[n]) n++;
+    const char** copy = bld_arena_alloc((n + 1) * sizeof(const char*));
+    for (size_t i = 0; i < n; i++) copy[i] = bld_str_dup(arr[i]);
+    copy[n] = NULL;
+    return copy;
+}
+
 /* ================================================================
  *  Path
  * ================================================================ */

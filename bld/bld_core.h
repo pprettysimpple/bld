@@ -85,6 +85,7 @@ typedef BLD_DA(const char*)    Bld_Strings;
 
 Bld_Strings bld_str_lines(const char* s);
 const char* bld_str_join(const Bld_Strings* parts, const char* sep);
+const char** bld_dup_strarray(const char** arr); /* deep-copy NULL-terminated string array */
 
 /* ===== Cmd — growable string buffer (arena-backed) ===== */
 
@@ -491,12 +492,8 @@ Bld_Target* bld_install_exe(Bld* b, Bld_Target* exe);
 Bld_Target* bld_install_lib(Bld* b, Bld_Target* lib);
 Bld_Target* bld_install(Bld* b, Bld_Target* target, Bld_Path dst);
 
-/* external dependencies */
-Bld_Dep* bld__dep(const Bld_Dep* d);
-Bld_Dep* bld_find_pkg(const char* name);
+/* external dependencies — bld__dep, bld_find_pkg declared in bld_dep.h */
 void     bld_use_dep(Bld_Target* t, Bld_Dep* dep);
-
-#define bld_dep(...) bld__dep(&(Bld_Dep){__VA_ARGS__})
 
 /* per-file compile flag override (non-zero fields override target defaults) */
 void bld__override_file(Bld_Target* t, const char* file, const Bld_CompileFlags* flags);

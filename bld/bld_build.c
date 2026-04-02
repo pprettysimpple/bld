@@ -7,15 +7,6 @@
  *  Helpers
  * ================================================================ */
 
-static const char** bld__dup_strarray(const char** arr) {
-    if (!arr) return NULL;
-    size_t n = 0;
-    while (arr[n]) n++;
-    const char** copy = bld_arena_alloc((n + 1) * sizeof(const char*));
-    for (size_t i = 0; i < n; i++) copy[i] = bld_str_dup(arr[i]);
-    copy[n] = NULL;
-    return copy;
-}
 
 /* ================================================================
  *  Clone
@@ -24,9 +15,9 @@ static const char** bld__dup_strarray(const char** arr) {
 Bld_CompileFlags bld_clone_compile_flags(Bld_CompileFlags f) {
     Bld_CompileFlags c = f;
     if (f.extra_flags) c.extra_flags = bld_str_dup(f.extra_flags);
-    c.defines = bld__dup_strarray(f.defines);
-    c.include_dirs = bld__dup_strarray(f.include_dirs);
-    c.system_include_dirs = bld__dup_strarray(f.system_include_dirs);
+    c.defines = bld_dup_strarray(f.defines);
+    c.include_dirs = bld_dup_strarray(f.include_dirs);
+    c.system_include_dirs = bld_dup_strarray(f.system_include_dirs);
     return c;
 }
 
@@ -74,115 +65,17 @@ void bld__override_file(Bld_Target* t, const char* file, const Bld_CompileFlags*
     Bld_FileOverride ov;
     ov.file = bld_str_dup(file);
     ov.flags = *flags;
-    ov.flags.defines = bld__dup_strarray(flags->defines);
-    ov.flags.include_dirs = bld__dup_strarray(flags->include_dirs);
-    ov.flags.system_include_dirs = bld__dup_strarray(flags->system_include_dirs);
+    ov.flags.defines = bld_dup_strarray(flags->defines);
+    ov.flags.include_dirs = bld_dup_strarray(flags->include_dirs);
+    ov.flags.system_include_dirs = bld_dup_strarray(flags->system_include_dirs);
     if (flags->extra_flags) ov.flags.extra_flags = bld_str_dup(flags->extra_flags);
     bld_da_push(&t->file_overrides, ov);
 }
 
-/* ================================================================
- *  External dependencies
- * ================================================================ */
-
-Bld_Dep* bld__dep(const Bld_Dep* d) {
-    Bld_Dep* c = bld_arena_alloc(sizeof(Bld_Dep));
-    *c = *d;
-    c->found = 1;
-    if (d->name) c->name = bld_str_dup(d->name);
-    c->include_dirs = bld__dup_strarray(d->include_dirs);
-    c->system_include_dirs = bld__dup_strarray(d->system_include_dirs);
-    c->libs = bld__dup_strarray(d->libs);
-    c->lib_dirs = bld__dup_strarray(d->lib_dirs);
-    if (d->extra_cflags) c->extra_cflags = bld_str_dup(d->extra_cflags);
-    if (d->extra_ldflags) c->extra_ldflags = bld_str_dup(d->extra_ldflags);
-    return c;
-}
+/* bld__dep, bld_find_pkg — implemented in bld_dep.c */
 
 void bld_use_dep(Bld_Target* t, Bld_Dep* dep) {
     bld_da_push(&t->ext_deps, dep);
-}
-
-/* parse pkg-config output into arrays */
-static void bld__parse_pkg_flags(const char* output, Bld_Dep* dep, int is_libs) {
-    if (!output || !output[0]) return;
-    Bld_Strings sysinc = {0}, libs = {0}, libdirs = {0};
-
-    const char* p = output;
-    while (*p) {
-        while (*p == ' ' || *p == '\n') p++;
-        if (!*p) break;
-        const char* tok = p;
-        while (*p && *p != ' ' && *p != '\n') p++;
-        size_t len = (size_t)(p - tok);
-        char* s = bld_arena_alloc(len + 1);
-        memcpy(s, tok, len); s[len] = '\0';
-
-        if (is_libs) {
-            if (strncmp(s, "-L", 2) == 0)      bld_da_push(&libdirs, bld_str_dup(s + 2));
-            else if (strncmp(s, "-l", 2) == 0)  bld_da_push(&libs, bld_str_dup(s + 2));
-            /* other flags go into extra_ldflags — skip for now */
-        } else {
-            if (strncmp(s, "-isystem", 8) == 0) {
-                /* -isystem may be followed by path as next token or attached */
-                if (len > 8) bld_da_push(&sysinc, bld_str_dup(s + 8));
-                else {
-                    while (*p == ' ') p++;
-                    const char* t2 = p;
-                    while (*p && *p != ' ' && *p != '\n') p++;
-                    if (p > t2) {
-                        char* s2 = bld_arena_alloc((size_t)(p - t2) + 1);
-                        memcpy(s2, t2, (size_t)(p - t2)); s2[p - t2] = '\0';
-                        bld_da_push(&sysinc, s2);
-                    }
-                }
-            }
-            else if (strncmp(s, "-I", 2) == 0)  bld_da_push(&sysinc, bld_str_dup(s + 2));
-            /* other flags go into extra_cflags — skip for now */
-        }
-    }
-
-    if (is_libs) {
-        if (libs.count) { bld_da_push(&libs, (const char*)NULL); dep->libs = libs.items; }
-        if (libdirs.count) { bld_da_push(&libdirs, (const char*)NULL); dep->lib_dirs = libdirs.items; }
-    } else {
-        if (sysinc.count) { bld_da_push(&sysinc, (const char*)NULL); dep->system_include_dirs = sysinc.items; }
-    }
-}
-
-Bld_Dep* bld_find_pkg(const char* name) {
-    Bld_Dep* dep = bld_arena_alloc(sizeof(Bld_Dep));
-    memset(dep, 0, sizeof(*dep));
-    dep->name = bld_str_dup(name);
-
-    const char* check = bld_str_fmt("pkg-config --exists %s 2>/dev/null", name);
-    if (system(check) != 0) {
-        dep->found = 0;
-        return dep;
-    }
-    dep->found = 1;
-
-    const char* cmd_cf = bld_str_fmt("pkg-config --cflags %s 2>/dev/null", name);
-    FILE* f = popen(cmd_cf, "r");
-    if (f) {
-        char buf[4096] = {0};
-        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-        buf[n] = '\0';
-        pclose(f);
-        bld__parse_pkg_flags(buf, dep, 0);
-    }
-
-    const char* cmd_libs = bld_str_fmt("pkg-config --libs %s 2>/dev/null", name);
-    f = popen(cmd_libs, "r");
-    if (f) {
-        char buf[4096] = {0};
-        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-        buf[n] = '\0';
-        pclose(f);
-        bld__parse_pkg_flags(buf, dep, 1);
-    }
-
-    return dep;
 }
 
 /* ================================================================
@@ -736,7 +629,7 @@ Bld_Target* bld__add_exe(Bld* b, const Bld_ExeOpts* opts) {
     exe->opts.name = bld_str_dup(opts->name);
     exe->opts.desc = opts->desc ? bld_str_dup(opts->desc) : "";
     exe->opts.output_name = opts->output_name ? bld_str_dup(opts->output_name) : NULL;
-    exe->opts.sources = bld__dup_strarray(opts->sources);
+    exe->opts.sources = bld_dup_strarray(opts->sources);
     exe->opts.compile = bld_clone_compile_flags(opts->compile);
     if (opts->link.extra_flags) exe->opts.link.extra_flags = bld_str_dup(opts->link.extra_flags);
 
@@ -817,7 +710,7 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
     lib->opts.name = bld_str_dup(opts->name);
     lib->opts.desc = opts->desc ? bld_str_dup(opts->desc) : "";
     lib->opts.output_name = opts->output_name ? bld_str_dup(opts->output_name) : NULL;
-    lib->opts.sources = bld__dup_strarray(opts->sources);
+    lib->opts.sources = bld_dup_strarray(opts->sources);
     lib->opts.compile = bld_clone_compile_flags(opts->compile);
     if (opts->link.extra_flags) lib->opts.link.extra_flags = bld_str_dup(opts->link.extra_flags);
 
@@ -901,7 +794,7 @@ Bld_Target* bld__add_step(Bld* b, const Bld_StepOpts* opts) {
         t->exit->hash_fn_ctx = opts->hash_fn_ctx;
     } else if (opts->watch) {
         Bld__StepHashCtx* ctx = bld_arena_alloc(sizeof(Bld__StepHashCtx));
-        *ctx = (Bld__StepHashCtx){.b = b, .watch = bld__dup_strarray(opts->watch)};
+        *ctx = (Bld__StepHashCtx){.b = b, .watch = bld_dup_strarray(opts->watch)};
         t->exit->hash_fn = bld__step_watch_hash;
         t->exit->hash_fn_ctx = ctx;
     }
@@ -991,7 +884,7 @@ Bld_Target* bld__add_test(Bld* b, Bld_Target* exe, const Bld_RunOpts* opts) {
     entry.name = opts->name ? bld_str_dup(opts->name) : exe->name;
     entry.exe = exe;
     entry.working_dir = opts->working_dir ? bld_str_dup(opts->working_dir) : NULL;
-    entry.args = bld__dup_strarray(opts->args);
+    entry.args = bld_dup_strarray(opts->args);
     bld_da_push(&b->tests, entry);
     return exe;
 }
