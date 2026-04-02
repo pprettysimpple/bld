@@ -26,7 +26,8 @@ static void bld__step_wait(Bld_Step* s) {
 
 /* ---- Hash + cache check ---- */
 
-static void bld__compute_step_hash(Bld* b, Bld_Step* step) {
+static void bld__compute_input_hash(Bld* b, Bld_Step* step) {
+    (void)b;
     Bld_Hash h = {0};
     for (size_t i = 0; i < step->deps.count; i++)
         if (step->deps.items[i]->hash_valid)
@@ -37,8 +38,6 @@ static void bld__compute_step_hash(Bld* b, Bld_Step* step) {
     if (step->hash_fn)
         h = step->hash_fn(step->hash_fn_ctx, h);
     step->input_hash = h;
-    bld__cache_compute_key(b, step);
-    step->hash_valid = 1;
 }
 
 /* ---- Perform step ---- */
@@ -66,9 +65,7 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
     }
 
     bld__step_set_state(step, BLD_STEP_RUNNING);
-    bld__compute_step_hash(b, step);
-
-    if (!step->action) { bld__step_set_state(step, BLD_STEP_OK); return; }
+    bld__compute_input_hash(b, step);
 
     if (bld__cache_has(b, step)) {
         __atomic_fetch_add(&b->steps_cached, 1, __ATOMIC_RELAXED);
@@ -201,7 +198,7 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
             if (step->action) b->progress_total++;
             continue;
         }
-        bld__compute_step_hash(b, step);
+        bld__compute_input_hash(b, step);
         if (bld__cache_has(b, step)) {
             __atomic_fetch_add(&b->steps_cached, 1, __ATOMIC_RELAXED);
             if (b->settings.show_cached && step->action && !step->silent)

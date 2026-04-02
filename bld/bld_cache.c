@@ -113,7 +113,8 @@ Bld_Path bld__cache_tmp(Bld* b) {
     return bld_path_join(bld_path_join(b->cache, bld_path("tmp")), bld_path_fmt("%" PRIu64, id));
 }
 
-void bld__cache_compute_key(Bld* b, Bld_Step* step) {
+int bld__cache_has(Bld* b, Bld_Step* step) {
+    /* compute cache_key from input_hash + depfile */
     Bld_Hash h = step->input_hash;
     if (step->has_depfile) {
         Bld_Path dep = bld__depfile_path(b, step);
@@ -121,9 +122,8 @@ void bld__cache_compute_key(Bld* b, Bld_Step* step) {
             h = bld_hash_combine(h, bld__hash_depfile(dep));
     }
     step->cache_key = h;
-}
+    step->hash_valid = 1;
 
-int bld__cache_has(Bld* b, Bld_Step* step) {
     if (!step->action) return 1;
     if (step->phony) return 0;
     if (!bld_fs_exists(bld__step_artifact(b, step))) return 0;
