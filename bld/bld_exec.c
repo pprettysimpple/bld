@@ -47,18 +47,7 @@ static void bld__compute_step_hash(Bld* b, Bld_Step* step) {
     step->hash_valid = 1;
 }
 
-static int bld__check_step_cache(Bld* b, Bld_Step* step) {
-    if (!step->action) return 1;
-    if (step->phony) return 0;
-    Bld_Path expected = bld__step_artifact(b, step);
-    if (!bld_fs_exists(expected)) return 0;
-    if (step->has_depfile) {
-        Bld_Path cached_dep = bld__step_depfile_cache(b, step);
-        if (!bld_fs_exists(cached_dep)) return 0;
-    }
-    if (!bld__validate_artifact(b, step)) return 0;
-    return 1;
-}
+/* bld__cache_has() is defined in bld_build.c */
 
 /* ---- Perform step ---- */
 
@@ -89,16 +78,15 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
 
     if (!step->action) { bld__step_set_state(step, BLD_STEP_OK); return; }
 
-    if (bld__check_step_cache(b, step)) {
+    if (bld__cache_has(b, step)) {
         __atomic_fetch_add(&b->steps_cached, 1, __ATOMIC_RELAXED);
         bld__step_set_state(step, BLD_STEP_OK);
         return;
     }
 
     /* execute */
-    Bld_Path expected = bld__step_artifact(b, step);
-    Bld_Path tmp_out = bld__new_tmp(b);
-    Bld_Path tmp_dep = step->has_depfile ? bld__new_tmp(b) : bld_path("");
+    Bld_Path tmp_out = bld__cache_tmp(b);
+    Bld_Path tmp_dep = step->has_depfile ? bld__cache_tmp(b) : bld_path("");
     Bld_ActionResult result = step->action(step->action_ctx, tmp_out, tmp_dep);
 
     if (result != BLD_ACTION_OK) {
@@ -107,34 +95,8 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
         return;
     }
 
-    if (step->has_depfile && bld_fs_exists(tmp_dep)) {
-        Bld_Path cached_dep = bld__step_depfile_cache(b, step);
-        bld_fs_mkdir_p(bld_path_parent(cached_dep));
-        bld_fs_rename(tmp_dep, cached_dep);
-        Bld_Hash new_full = bld_hash_combine(step->recipe_hash_value,
-                                              bld__hash_depfile_contents(cached_dep));
-        step->full_hash_value = new_full;
-        expected = bld__step_artifact(b, step);
-    }
-
-    if (bld_fs_exists(tmp_out)) {
-        bld_fs_mkdir_p(bld_path_parent(expected));
-        bld_fs_rename(tmp_out, expected);
-    }
-
-    /* early cutoff */
-    if (step->content_hash && bld_fs_exists(expected)) {
-        Bld_Hash ch = bld_fs_is_dir(expected) ? bld_hash_dir(expected) : bld_hash_file(expected);
-        if (ch.value != step->full_hash_value.value) {
-            step->full_hash_value = ch;
-            Bld_Path new_art = bld__step_artifact(b, step);
-            if (bld_fs_exists(new_art)) bld_fs_remove_all(new_art);
-            bld_fs_mkdir_p(bld_path_parent(new_art));
-            bld_fs_rename(expected, new_art);
-        }
-    }
-
-    bld__write_artifact_meta(b, step);
+    bld__cache_store_depfile(b, step, tmp_dep);
+    bld__cache_store_artifact(b, step, tmp_out);
 
     __atomic_fetch_add(&b->steps_executed, 1, __ATOMIC_RELAXED);
     if (!b->settings.silent) {
@@ -249,7 +211,7 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
             continue;
         }
         bld__compute_step_hash(b, step);
-        if (bld__check_step_cache(b, step)) {
+        if (bld__cache_has(b, step)) {
             __atomic_fetch_add(&b->steps_cached, 1, __ATOMIC_RELAXED);
             if (b->settings.show_cached && step->action && !step->silent)
                 bld_log_cached(step->name);

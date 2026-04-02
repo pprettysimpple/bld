@@ -501,8 +501,10 @@ static void bld__cmd_render_compile(Bld__Cmd* cmd, Bld* b, Bld_Compiler* comp,
 }
 
 /* ================================================================
- *  Cache paths
+ *  Cache — artifact storage, validation, tmp files
  * ================================================================ */
+
+/* ---- Path helpers ---- */
 
 static Bld_Path bld__cache_art(Bld* b, Bld_Hash h) {
     return bld_path_join(bld_path_join(b->cache, bld_path("arts")), bld_path_fmt("%" PRIu64, h.value));
@@ -513,8 +515,25 @@ static Bld_Path bld__cache_art_meta(Bld* b, Bld_Hash h) {
 }
 
 static Bld_Path bld__step_artifact(Bld* b, Bld_Step* s) { return bld__cache_art(b, s->full_hash_value); }
+static Bld_Path bld__target_artifact(Bld* b, Bld_Target* t) { return bld__step_artifact(b, t->exit); }
 
-static void bld__write_artifact_meta(Bld* b, Bld_Step* s) {
+static Bld_Path bld__step_depfile_cache(Bld* b, Bld_Step* s) {
+    size_t len = strlen(s->name);
+    char* safe = bld_arena_alloc(len + 1);
+    for (size_t i = 0; i < len; i++) safe[i] = (s->name[i] == '/') ? '_' : s->name[i];
+    safe[len] = '\0';
+    return bld_path_join(bld_path_join(b->cache, bld_path("deps")), bld_path_fmt("%s.d", safe));
+}
+
+static uint64_t bld__tmp_counter = 0;
+static Bld_Path bld__cache_tmp(Bld* b) {
+    uint64_t id = __atomic_fetch_add(&bld__tmp_counter, 1, __ATOMIC_RELAXED);
+    return bld_path_join(bld_path_join(b->cache, bld_path("tmp")), bld_path_fmt("%" PRIu64, id));
+}
+
+/* ---- Content validation ---- */
+
+static void bld__cache_write_meta(Bld* b, Bld_Step* s) {
     Bld_Path art = bld__step_artifact(b, s);
     if (!bld_fs_exists(art)) return;
     Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
@@ -523,7 +542,7 @@ static void bld__write_artifact_meta(Bld* b, Bld_Step* s) {
     bld_fs_write_file(meta, data, strlen(data));
 }
 
-static int bld__validate_artifact(Bld* b, Bld_Step* s) {
+static int bld__cache_validate(Bld* b, Bld_Step* s) {
     Bld_Path art = bld__step_artifact(b, s);
     Bld_Path meta = bld__cache_art_meta(b, s->full_hash_value);
     if (!bld_fs_exists(meta)) return 0;
@@ -534,21 +553,47 @@ static int bld__validate_artifact(Bld* b, Bld_Step* s) {
     Bld_Hash ch = bld_fs_is_dir(art) ? bld_hash_dir(art) : bld_hash_file(art);
     return ch.value == stored;
 }
-static Bld_Path bld__target_artifact(Bld* b, Bld_Target* t) { return bld__step_artifact(b, t->exit); }
 
-static Bld_Path bld__step_depfile_cache(Bld* b, Bld_Step* s) {
-    /* sanitize step name: replace / with _ to avoid nested dirs */
-    size_t len = strlen(s->name);
-    char* safe = bld_arena_alloc(len + 1);
-    for (size_t i = 0; i < len; i++) safe[i] = (s->name[i] == '/') ? '_' : s->name[i];
-    safe[len] = '\0';
-    return bld_path_join(bld_path_join(b->cache, bld_path("deps")), bld_path_fmt("%s.d", safe));
+/* ---- Cache lookup ---- */
+
+static int bld__cache_has(Bld* b, Bld_Step* step) {
+    if (!step->action) return 1;
+    if (step->phony) return 0;
+    if (!bld_fs_exists(bld__step_artifact(b, step))) return 0;
+    if (step->has_depfile && !bld_fs_exists(bld__step_depfile_cache(b, step))) return 0;
+    if (!bld__cache_validate(b, step)) return 0;
+    return 1;
 }
 
-static uint64_t bld__tmp_counter = 0;
-static Bld_Path bld__new_tmp(Bld* b) {
-    uint64_t id = __atomic_fetch_add(&bld__tmp_counter, 1, __ATOMIC_RELAXED);
-    return bld_path_join(bld_path_join(b->cache, bld_path("tmp")), bld_path_fmt("%" PRIu64, id));
+/* ---- Cache store ---- */
+
+static void bld__cache_store_depfile(Bld* b, Bld_Step* step, Bld_Path tmp_dep) {
+    if (!step->has_depfile || !bld_fs_exists(tmp_dep)) return;
+    Bld_Path cached_dep = bld__step_depfile_cache(b, step);
+    bld_fs_mkdir_p(bld_path_parent(cached_dep));
+    bld_fs_rename(tmp_dep, cached_dep);
+    step->full_hash_value = bld_hash_combine(step->recipe_hash_value,
+                                              bld__hash_depfile_contents(cached_dep));
+}
+
+static void bld__cache_store_artifact(Bld* b, Bld_Step* step, Bld_Path tmp_out) {
+    Bld_Path expected = bld__step_artifact(b, step);
+    if (bld_fs_exists(tmp_out)) {
+        bld_fs_mkdir_p(bld_path_parent(expected));
+        bld_fs_rename(tmp_out, expected);
+    }
+    /* early cutoff: if content differs from recipe hash, use content hash as key */
+    if (step->content_hash && bld_fs_exists(expected)) {
+        Bld_Hash ch = bld_fs_is_dir(expected) ? bld_hash_dir(expected) : bld_hash_file(expected);
+        if (ch.value != step->full_hash_value.value) {
+            step->full_hash_value = ch;
+            Bld_Path new_art = bld__step_artifact(b, step);
+            if (bld_fs_exists(new_art)) bld_fs_remove_all(new_art);
+            bld_fs_mkdir_p(bld_path_parent(new_art));
+            bld_fs_rename(expected, new_art);
+        }
+    }
+    bld__cache_write_meta(b, step);
 }
 
 static void bld__cmd_append_inputs(Bld__Cmd* cmd, Bld* b, Bld_Step* exit_step) {
@@ -1261,7 +1306,7 @@ static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path d
         bld_fs_write_file(output, rc == 0 ? "1" : "0", 1);
     } else {
         /* compile + run — output is the printed value, or "0" on failure */
-        Bld_Path bin = bld__new_tmp(c->b);
+        Bld_Path bin = bld__cache_tmp(c->b);
         const char* cmd = bld_str_fmt("%s -xc %s -o %s 2>/dev/null && %s",
                                        cc, src_path, bin.s, bin.s);
         FILE* f = popen(cmd, "r");
