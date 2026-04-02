@@ -515,15 +515,7 @@ void bld_execute(Bld* b);
 int  bld_target_ok(Bld_Target* t);
 Bld_Path bld_target_artifact(Bld* b, Bld_Target* t);
 
-/* feature detection checks */
-typedef struct Bld_Checks Bld_Checks;
-Bld_Checks* bld_checks_new(Bld* parent);
-bool* bld_checks_header(Bld_Checks* c, const char* define_name, const char* header);
-bool* bld_checks_func(Bld_Checks* c, const char* define_name, const char* func, const char* header);
-int*  bld_checks_sizeof(Bld_Checks* c, const char* define_name, const char* type);
-bool* bld_checks_compile(Bld_Checks* c, const char* define_name, const char* source);
-void  bld_checks_run(Bld_Checks* c);
-void  bld_checks_write(Bld_Checks* c, const char* path);
+/* feature detection checks — declared in bld_checks.h */
 
 /* test registration */
 Bld_Target* bld__add_test(Bld* b, Bld_Target* exe, const Bld_RunOpts* opts);
