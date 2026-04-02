@@ -895,8 +895,11 @@ Bld_Target* bld__add_step(Bld* b, const Bld_StepOpts* opts) {
         t->exit->action_ctx = opts->action_ctx;
     }
     t->exit->has_depfile = opts->has_depfile;
-    t->exit->content_hash = 1;
-    if (opts->watch) {
+    t->exit->content_hash = opts->watch ? 1 : opts->content_hash;
+    if (opts->hash_fn) {
+        t->exit->hash_fn = opts->hash_fn;
+        t->exit->hash_fn_ctx = opts->hash_fn_ctx;
+    } else if (opts->watch) {
         Bld__StepHashCtx* ctx = bld_arena_alloc(sizeof(Bld__StepHashCtx));
         *ctx = (Bld__StepHashCtx){.b = b, .watch = bld__dup_strarray(opts->watch)};
         t->exit->hash_fn = bld__step_watch_hash;
@@ -1178,11 +1181,11 @@ static void bld__checks_add(Bld_Checks* c, const char* define_name, const char* 
         .name = bld_str_fmt("check:%s", define_name),
         .action = bld__check_action,
         .action_ctx = ctx,
+        .hash_fn = bld__check_recipe_hash,
+        .hash_fn_ctx = ctx,
         .has_depfile = !is_sizeof,
+        .content_hash = 0,
     });
-    ch->target->exit->hash_fn = bld__check_recipe_hash;
-    ch->target->exit->hash_fn_ctx = ctx;
-    ch->target->exit->content_hash = 0; /* checks should cache normally, not re-run every time */
 }
 
 Bld_Checks* bld_checks_new(Bld* parent) {

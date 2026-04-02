@@ -342,8 +342,11 @@ typedef struct {
     const char*    desc;
     Bld_ActionFn   action;
     void*          action_ctx;
+    Bld_HashFn     hash_fn;
+    void*          hash_fn_ctx;
     int            has_depfile;
-    const char**   watch;      /* NULL-terminated list of files to hash for cache invalidation */
+    int            content_hash; /* 1: use output content hash for early cutoff (default for steps) */
+    const char**   watch;        /* NULL-terminated list of files to hash for cache invalidation */
 } Bld_StepOpts;
 
 /* ===== Exe, Lib — "derived" from Target ===== */
