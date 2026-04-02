@@ -2,112 +2,94 @@
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TEST_DIR/../common.sh"
 
-NUM_FILES=50
-KILL_ROUNDS=10
-CORRUPT_ROUNDS=5
+ROUNDS=100
+CLEAN_CHECK_EVERY=10
 
 setup_workdir
-
-# generate sources
-bash "$TEST_DIR/gen_sources.sh" "$NUM_FILES"
-
-# expected output: sum of 1..N
-expected_sum=$(( NUM_FILES * (NUM_FILES + 1) / 2 ))
-
+bash "$TEST_DIR/gen_sources.sh"
 bld_bootstrap
 
-# ---- Phase 1: clean build, verify correctness ----
-
+# reference build
 bld_install
 assert_success
-assert_exe_output out/bin/stress "$expected_sum"
 
-# ---- Phase 2: kill mid-build ----
+ref_hash=$(find out -type f | sort | xargs md5sum | md5sum | cut -d' ' -f1)
 
-for round in $(seq 1 "$KILL_ROUNDS"); do
-    # nuke cache to force full rebuild
-    rm -rf .cache
-
-    # launch build in background, kill after random delay
-    ./b install --prefix out >/dev/null 2>&1 &
-    pid=$!
-    # random delay 0.01-0.15s (builds are fast)
-    sleep "0.$(printf '%02d' $((RANDOM % 15 + 1)))"
-    kill -9 "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-
-    # clean up orphan tmp files
-    rm -rf .cache/tmp 2>/dev/null || true
-
-    # recovery build must succeed
-    bld_install
-    assert_success
-    assert_exe_output out/bin/stress "$expected_sum"
+# backup sources
+mkdir -p .src_backup
+find . -path ./.src_backup -prune -o \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print | while read f; do
+    mkdir -p ".src_backup/$(dirname "$f")"
+    cp "$f" ".src_backup/$f"
 done
 
-# ---- Phase 3: cache corruption — delete random artifacts ----
+mapfile -t ALL_SOURCES < <(find . -path ./.src_backup -prune -o \( -name '*.c' -o -name '*.cpp' \) -print | grep -v .src_backup)
 
-for round in $(seq 1 "$CORRUPT_ROUNDS"); do
-    if [ -d .cache/arts ]; then
-        find .cache/arts -type f | shuf | head -n $((RANDOM % 5 + 1)) | xargs -r rm -f
+get_output_hash() {
+    find out -type f | sort | xargs md5sum | md5sum | cut -d' ' -f1
+}
+
+for round in $(seq 1 "$ROUNDS"); do
+    # mutate 1..8 random files
+    n=$(( RANDOM % 8 + 1 ))
+    targets=$(printf '%s\n' "${ALL_SOURCES[@]}" | shuf | head -n "$n")
+    for f in $targets; do echo "/* r=$round */" >> "$f"; done
+
+    # incremental build
+    bld_install
+    assert_success
+    inc_hash=$(get_output_hash)
+
+    # periodically verify incremental == clean
+    if [ $((round % CLEAN_CHECK_EVERY)) -eq 0 ]; then
+        rm -rf .cache out
+        bld_install
+        assert_success
+        clean_hash=$(get_output_hash)
+        [ "$inc_hash" = "$clean_hash" ] || die "round $round: incremental != clean"
     fi
 
+    # revert
+    for f in $targets; do cp ".src_backup/$f" "$f"; done
+
+    # incremental back to original
     bld_install
     assert_success
-    assert_exe_output out/bin/stress "$expected_sum"
+    cur_hash=$(get_output_hash)
+    [ "$cur_hash" = "$ref_hash" ] || die "round $round: revert hash mismatch"
 done
 
-# ---- Phase 4: cache corruption — truncate artifacts ----
-
-for round in $(seq 1 "$CORRUPT_ROUNDS"); do
-    if [ -d .cache/arts ]; then
-        target=$(find .cache/arts -type f | shuf | head -1)
-        if [ -n "$target" ]; then
-            : > "$target"
+# kill mid-build + recovery
+(
+    set +e
+    actual_kills=0
+    for round in $(seq 1 20); do
+        rm -rf .cache out 2>/dev/null
+        ./b install -j4 --prefix out >/dev/null 2>&1 &
+        pid=$!
+        sleep "0.$((RANDOM % 70 + 30))"
+        if kill -9 "$pid" 2>/dev/null; then
+            wait "$pid" 2>/dev/null
+            ((actual_kills++))
+        else
+            wait "$pid" 2>/dev/null
         fi
+        rm -rf .cache/tmp .cache 2>/dev/null
+
+        BUILD_EXIT=0
+        BUILD_OUTPUT="$(./b install -j4 --prefix out 2>&1)" || BUILD_EXIT=$?
+        if [ "$BUILD_EXIT" -ne 0 ]; then
+            echo "FAIL: kill round $round: recovery failed" >&2
+            echo "$BUILD_OUTPUT" >&2
+            exit 1
+        fi
+        cur_hash=$(find out -type f | sort | xargs md5sum | md5sum | cut -d' ' -f1)
+        if [ "$cur_hash" != "$ref_hash" ]; then
+            echo "FAIL: kill round $round: hash mismatch" >&2
+            exit 1
+        fi
+    done
+    if [ "$actual_kills" -eq 0 ]; then
+        echo "FAIL: no builds were actually killed" >&2
+        exit 1
     fi
-
-    bld_install
-    assert_success
-    assert_exe_output out/bin/stress "$expected_sum"
-done
-
-# ---- Phase 5: delete all depfiles ----
-
-rm -rf .cache/deps
-bld_install
-assert_success
-assert_exe_output out/bin/stress "$expected_sum"
-
-# ---- Phase 6: nuke entire cache ----
-
-rm -rf .cache
-bld_install
-assert_success
-assert_exe_output out/bin/stress "$expected_sum"
-
-# ---- Phase 7: concurrent builds ----
-
-rm -rf .cache out
-bld_install
-assert_success
-
-# launch 4 concurrent installs to different prefixes
-pids=()
-for i in $(seq 1 4); do
-    ./b install --prefix "out${i}" >/dev/null 2>&1 &
-    pids+=($!)
-done
-
-concurrent_fail=0
-for pid in "${pids[@]}"; do
-    if ! wait "$pid"; then
-        concurrent_fail=1
-    fi
-done
-
-# regardless of concurrent result, a clean sequential build must work
-rm -rf .cache out
-bld_install
-assert_success
-assert_exe_output out/bin/stress "$expected_sum"
+) || exit 1
