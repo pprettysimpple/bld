@@ -12,21 +12,46 @@
  *   ./b build -Dzstd=on                 — enable Zstandard
  *   ./b build -Dcares=on                — enable c-ares resolver
  *   ./b build -Dhttp-only=on            — HTTP(S) only
- *   ./b install --prefix /usr/local     — install curl + libcurl.a
+ *   ./b build -Dipv6=off                — disable IPv6
+ *   ./b install --prefix /usr/local     — install curl + libcurl.a + headers
  *   ./b test                            — run curl --version
  */
 #define BLD_IMPLEMENTATION
 #define BLD_STRIP_PREFIX
 #include "bld.h"
 
-BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
+BLD_RECOMPILE_CMD("cc -std=c11 -I../../ -w build.c -lpthread")
+
+/* ---- Install headers custom step ---- */
+
+static Bld_ActionResult install_headers_action(void* ctx, Bld_Path output, Bld_Path depfile) {
+    (void)ctx;
+    (void)depfile;
+    bld_fs_mkdir_p(output);
+    Bld_Path src = bld_path("include/curl");
+    Bld_Path dst = bld_path_join(output, bld_path("curl"));
+    bld_fs_mkdir_p(dst);
+    Bld_PathList files = bld_fs_list_files_r(src);
+    for (size_t i = 0; i < files.count; i++) {
+        const char* fname = bld_path_filename(files.items[i]);
+        const char* ext = bld_path_ext(files.items[i]);
+        if (ext && strcmp(ext, ".h") == 0) {
+            bld_fs_copy_file(files.items[i], bld_path_join(dst, bld_path(fname)));
+        }
+    }
+    return BLD_ACTION_OK;
+}
 
 /* ---- Feature detection & config header generation ---- */
 
 static void generate_config(Bld* b,
                              bool has_ssl, bool has_zlib, bool has_nghttp2,
                              bool has_ssh2, bool has_idn2, bool has_psl,
-                             bool has_brotli, bool has_zstd, bool has_cares)
+                             bool has_brotli, bool has_zstd, bool has_cares,
+                             bool opt_ipv6,
+                             bool no_ws, bool no_proxy, bool no_cookies,
+                             bool no_auth, bool no_doh, bool no_mime,
+                             bool no_netrc, bool no_file)
 {
     Bld_Checks* c = bld_checks_new(b);
 
@@ -129,6 +154,64 @@ static void generate_config(Bld* b,
         "#include <stdlib.h>\n"
         "int main(void){(void)arc4random;return 0;}");
 
+    /* -- strerror_r variant detection -- */
+    bld_checks_compile(c, "HAVE_GLIBC_STRERROR_R",
+        "#include <string.h>\n#include <errno.h>\n"
+        "static void check(char c){(void)c;}\n"
+        "int main(void){char buf[1024];\n"
+        "check(strerror_r(EACCES,buf,sizeof(buf))[0]);return 0;}");
+    bld_checks_compile(c, "HAVE_POSIX_STRERROR_R",
+        "#include <string.h>\n#include <errno.h>\n"
+        "static void check(float f){(void)f;}\n"
+        "int main(void){char buf[1024];\n"
+        "check(strerror_r(EACCES,buf,sizeof(buf)));return 0;}");
+
+    /* -- gethostbyname_r argument count detection -- */
+    bld_checks_compile(c, "HAVE_GETHOSTBYNAME_R_6",
+        "#include <sys/types.h>\n#include <netdb.h>\n"
+        "int main(void){struct hostent h,*hp;char buf[8192];int err;\n"
+        "gethostbyname_r(\"x\",&h,buf,8192,&hp,&err);return 0;}");
+    bld_checks_compile(c, "HAVE_GETHOSTBYNAME_R_5",
+        "#include <sys/types.h>\n#include <netdb.h>\n"
+        "int main(void){struct hostent h;char buf[8192];int err;\n"
+        "gethostbyname_r(\"x\",&h,buf,8192,&err);return 0;}");
+    bld_checks_compile(c, "HAVE_GETHOSTBYNAME_R_3",
+        "#include <sys/types.h>\n#include <netdb.h>\n"
+        "int main(void){struct hostent h;struct hostent_data hd;\n"
+        "gethostbyname_r(\"x\",&h,&hd);return 0;}");
+
+    /* -- fsetxattr variant detection -- */
+    bld_checks_compile(c, "HAVE_FSETXATTR_5",
+        "#include <sys/xattr.h>\n"
+        "int main(void){return fsetxattr(0,\"a\",\"b\",1,0);}");
+    bld_checks_compile(c, "HAVE_FSETXATTR_6",
+        "#include <sys/xattr.h>\n"
+        "int main(void){return fsetxattr(0,\"a\",\"b\",1,0,0);}");
+
+    /* -- struct member checks -- */
+    bld_checks_compile(c, "HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID",
+        "#include <sys/types.h>\n#include <netinet/in.h>\n"
+        "int main(void){struct sockaddr_in6 s;s.sin6_scope_id=0;return (int)s.sin6_scope_id;}");
+    bld_checks_compile(c, "USE_UNIX_SOCKETS",
+        "#include <sys/un.h>\n"
+        "int main(void){struct sockaddr_un s;s.sun_path[0]='x';return 0;}");
+
+    /* -- additional feature checks -- */
+    bld_checks_compile(c, "HAVE_CLOCK_GETTIME_MONOTONIC_RAW",
+        "#include <time.h>\n"
+        "int main(void){struct timespec ts;return clock_gettime(CLOCK_MONOTONIC_RAW,&ts);}");
+    bld_checks_compile(c, "HAVE_GETADDRINFO_THREADSAFE",
+        "#define _POSIX_C_SOURCE 200809L\n#include <netdb.h>\n"
+        "int main(void){struct addrinfo *r;getaddrinfo(\"x\",\"80\",0,&r);freeaddrinfo(r);return 0;}");
+    bld_checks_compile(c, "HAVE_DECL_FSEEKO",
+        "#include <stdio.h>\nint main(void){(void)fseeko;return 0;}");
+    bld_checks_compile(c, "HAVE_SIGSETJMP",
+        "#include <setjmp.h>\n"
+        "int main(void){sigjmp_buf b;if(sigsetjmp(b,1))return 1;return 0;}");
+    bld_checks_compile(c, "HAVE_SIGINTERRUPT",
+        "#include <signal.h>\n"
+        "int main(void){siginterrupt(2,1);return 0;}");
+
     /* -- Sizeof checks -- */
     bld_checks_sizeof(c, "SIZEOF_INT",        "int");
     bld_checks_sizeof(c, "SIZEOF_LONG",       "long");
@@ -178,11 +261,18 @@ static void generate_config(Bld* b,
     L("/* Platform */");
     L("#define OS \"Linux\"");
     L("#define STDC_HEADERS 1");
-    L("#define HAVE_POSIX_STRERROR_R 1");
     L("#define HAVE_FILE_OFFSET_BITS 1");
     L("#define _FILE_OFFSET_BITS 64");
+    L("");
+    L("/* gethostbyname_r — detected variant defines HAVE_GETHOSTBYNAME_R */");
+    L("#if defined(HAVE_GETHOSTBYNAME_R_6) || defined(HAVE_GETHOSTBYNAME_R_5) || defined(HAVE_GETHOSTBYNAME_R_3)");
     L("#define HAVE_GETHOSTBYNAME_R 1");
-    L("#define HAVE_GETHOSTBYNAME_R_6 1");
+    L("#endif");
+    L("");
+    L("/* fsetxattr — detected variant defines HAVE_FSETXATTR */");
+    L("#if defined(HAVE_FSETXATTR_5) || defined(HAVE_FSETXATTR_6)");
+    L("#define HAVE_FSETXATTR 1");
+    L("#endif");
     L("");
     L("/* recv/send type signatures (POSIX) */");
     L("#define RECV_TYPE_ARG1 int");
@@ -199,8 +289,6 @@ static void generate_config(Bld* b,
     L("#define HAVE_MSG_NOSIGNAL 1");
     L("#define HAVE_FCNTL_O_NONBLOCK 1");
     L("#define CURL_OS \"Linux\"");
-    L("#define HAVE_FSETXATTR 1");
-    L("#define HAVE_FSETXATTR_5 1");
     L("");
     L("/* Threading (POSIX) */");
     L("#define USE_THREADS_POSIX 1");
@@ -215,6 +303,12 @@ static void generate_config(Bld* b,
         L("#define CURL_CA_BUNDLE \"/etc/pki/tls/certs/ca-bundle.crt\"");
     else if (bld_fs_is_file(bld_path("/etc/ssl/ca-bundle.pem")))
         L("#define CURL_CA_BUNDLE \"/etc/ssl/ca-bundle.pem\"");
+    if (bld_fs_is_dir(bld_path("/etc/ssl/certs")))
+        L("#define CURL_CA_PATH \"/etc/ssl/certs\"");
+    L("");
+    L("/* IPv6 */");
+    if (opt_ipv6)
+        L("#define ENABLE_IPV6 1");
     L("");
     L("/* Optional features (based on -D options) */");
     if (has_ssl)     L("#define USE_OPENSSL 1");
@@ -232,6 +326,16 @@ static void generate_config(Bld* b,
         L("#define USE_ARES 1");
         L("#define USE_RESOLV_ARES 1");
     }
+    L("");
+    L("/* Protocol/feature disable flags */");
+    if (no_ws)      L("#define CURL_DISABLE_WEBSOCKETS 1");
+    if (no_proxy)   L("#define CURL_DISABLE_PROXY 1");
+    if (no_cookies) L("#define CURL_DISABLE_COOKIES 1");
+    if (no_auth)    L("#define CURL_DISABLE_HTTP_AUTH 1");
+    if (no_doh)     L("#define CURL_DISABLE_DOH 1");
+    if (no_mime)    L("#define CURL_DISABLE_MIME 1");
+    if (no_netrc)   L("#define CURL_DISABLE_NETRC 1");
+    if (no_file)    L("#define CURL_DISABLE_FILE 1");
     L("");
     L("#endif /* CURL_CONFIG_H */");
     #undef L
@@ -257,6 +361,7 @@ void configure(Bld* b) {
     bool opt_brotli  = option_bool(b, "brotli",  "Brotli compression", false);
     bool opt_zstd    = option_bool(b, "zstd",    "Zstandard compression", false);
     bool opt_cares   = option_bool(b, "cares",   "c-ares DNS resolver", false);
+    bool opt_ipv6    = option_bool(b, "ipv6",    "IPv6 support", true);
 
     bool http_only = option_bool(b, "http-only", "HTTP(S) only, disable all other protocols", false);
     bool no_ftp    = option_bool(b, "disable-ftp",    "Disable FTP",    false);
@@ -271,6 +376,14 @@ void configure(Bld* b) {
     bool no_smtp   = option_bool(b, "disable-smtp",   "Disable SMTP",   false);
     bool no_gopher = option_bool(b, "disable-gopher", "Disable Gopher", false);
     bool no_mqtt   = option_bool(b, "disable-mqtt",   "Disable MQTT",   false);
+    bool no_ws     = option_bool(b, "disable-websockets", "Disable WebSocket", false);
+    bool no_proxy  = option_bool(b, "disable-proxy",     "Disable proxy", false);
+    bool no_cookies = option_bool(b, "disable-cookies",  "Disable cookies", false);
+    bool no_auth   = option_bool(b, "disable-http-auth", "Disable HTTP auth", false);
+    bool no_doh    = option_bool(b, "disable-doh",       "Disable DNS-over-HTTPS", false);
+    bool no_mime   = option_bool(b, "disable-mime",      "Disable MIME", false);
+    bool no_netrc  = option_bool(b, "disable-netrc",     "Disable netrc", false);
+    bool no_file   = option_bool(b, "disable-file",      "Disable FILE protocol", false);
 
     /* ---- Find dependencies via pkg-config ---- */
 
@@ -313,7 +426,10 @@ void configure(Bld* b) {
     /* ---- Generate config headers ---- */
 
     generate_config(b, has_ssl, has_zlib, has_nghttp2, has_ssh2,
-                    has_idn2, has_psl, has_brotli, has_zstd, has_cares);
+                    has_idn2, has_psl, has_brotli, has_zstd, has_cares,
+                    opt_ipv6,
+                    no_ws, no_proxy, no_cookies, no_auth, no_doh,
+                    no_mime, no_netrc, no_file);
 
     /* ---- Compile defines ---- */
 
@@ -352,7 +468,6 @@ void configure(Bld* b) {
     /* ---- libcurl.a ---- */
 
     CompileFlags lib_cflags = default_compile_flags(b);
-    /* lib_cflags.standard removed — set globally above */
     lib_cflags.optimize = OPT_O2;
     lib_cflags.extra_flags = "-fvisibility=hidden -D_GNU_SOURCE";
     lib_cflags.defines = lib_defs.items;
@@ -385,7 +500,6 @@ void configure(Bld* b) {
     /* ---- curl executable ---- */
 
     CompileFlags tool_cflags = default_compile_flags(b);
-    /* tool_cflags.standard removed — set globally above */
     tool_cflags.optimize = OPT_O2;
     tool_cflags.extra_flags = "-D_GNU_SOURCE";
     tool_cflags.defines = tool_defs.items;
@@ -426,6 +540,15 @@ void configure(Bld* b) {
 
     add_install_exe(b, curl_exe);
     add_install_lib(b, libcurl);
+
+    /* Install public headers: include/curl/*.h → $(prefix)/include/curl/ */
+    Target* hdrs = add_step(b,
+        .name = "headers",
+        .desc = "Public headers",
+        .action = install_headers_action,
+        .action_ctx = b,
+        .watch = BLD_PATHS("include/curl"));
+    add_install(b, hdrs, bld_path("include"));
 
     /* ---- Test ---- */
 
@@ -479,12 +602,9 @@ void configure(Bld* b) {
  *    curl generates and installs curl-config, a shell script for consumers
  *    to query compile/link flags. No equivalent in bld.h.
  *
- * 7. INSTALLING HEADERS AND MAN PAGES
- *    curl installs:
- *    - include/curl/*.h → $(prefix)/include/curl/
- *    - Man pages (curl.1, curl_easy_*.3, etc.) → $(prefix)/man/
- *    bld.h's install API only handles executables and libraries. Arbitrary
- *    file installation would require custom steps.
+ * 7. INSTALLING MAN PAGES
+ *    curl installs man pages (curl.1, curl_easy_*.3, etc.) to
+ *    $(prefix)/man/. This build does not generate or install man pages.
  *
  * 8. TEST INFRASTRUCTURE
  *    curl has a Perl-based test harness (runtests.pl) with custom test HTTP/
@@ -492,42 +612,31 @@ void configure(Bld* b) {
  *    special static builds with UNITTESTS define. bld.h's test API runs
  *    executables but cannot replicate this infrastructure.
  *
- * 9. GETHOSTBYNAME_R ARGUMENT COUNT DETECTION
- *    curl's configure detects whether gethostbyname_r takes 3, 5, or 6
- *    arguments (varies across systems). This build hardcodes the 6-argument
- *    Linux variant (HAVE_GETHOSTBYNAME_R_6). A fully portable build would
- *    need compile-and-run checks with different signatures.
+ * 9. PLATFORM-SPECIFIC TARGETS (AmigaOS, VMS, DOS)
+ *    curl has specific source files and build logic for AmigaOS, VMS, and
+ *    DOS (DJGPP). These are niche platforms and not supported by bld.h.
  *
- * 10. STRERROR_R VARIANT DETECTION
- *     The XSI vs GNU variant of strerror_r has different return types.
- *     This build hardcodes HAVE_POSIX_STRERROR_R (the XSI variant on glibc).
- *     A fully portable build needs compile-and-link checks.
- *
- * 11. PLATFORM-SPECIFIC TARGETS (AmigaOS, VMS, DOS)
- *     curl has specific source files and build logic for AmigaOS, VMS, and
- *     DOS (DJGPP). These are niche platforms and not supported by bld.h.
- *
- * 12. DEBUG BUILD POSTFIX
+ * 10. DEBUG BUILD POSTFIX
  *     curl's CMake adds a "-d" suffix to debug builds (libcurl-d.so). bld.h
  *     has no mechanism for build-mode-specific output name suffixes.
  *
- * 13. UNITY BUILD MODE
+ * 11. UNITY BUILD MODE
  *     CMake supports CMAKE_UNITY_BUILD for faster compilation via batched
  *     source inclusion. bld.h does not have a built-in unity build mode
  *     (it could be emulated via a custom codegen step, as bld itself does).
  *
- * 14. STATIC ANALYSIS INTEGRATION
+ * 12. STATIC ANALYSIS INTEGRATION
  *     curl's CMake integrates clang-tidy, GCC -fanalyzer, and custom lint
  *     scripts. bld.h has no built-in static analysis support.
  *
- * 15. UNINSTALL TARGET
+ * 13. UNINSTALL TARGET
  *     curl provides uninstall capability. bld.h has no uninstall mechanism.
  *
- * 16. CROSS-COMPILATION
+ * 14. CROSS-COMPILATION
  *     curl supports cross-compilation via CMake toolchain files. bld.h has
  *     no cross-compilation support.
  *
- * 17. WCURL WRAPPER SCRIPT
+ * 15. WCURL WRAPPER SCRIPT
  *     curl installs a wcurl wrapper script for simple downloads. This is
  *     just a shell script copy, but bld.h's install doesn't handle scripts.
  */
