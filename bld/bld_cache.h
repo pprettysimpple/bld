@@ -3,21 +3,18 @@
 
 #include "bld_core.h"
 
-/* path resolution */
+/* artifact path resolution */
 Bld_Path bld__step_artifact(Bld* b, Bld_Step* s);
 Bld_Path bld__target_artifact(Bld* b, Bld_Target* t);
-Bld_Path bld__step_depfile_cache(Bld* b, Bld_Step* s);
+
+/* tmp file allocation */
 Bld_Path bld__cache_tmp(Bld* b);
 
-/* depfile hashing */
-Bld_Hash bld__hash_depfile_contents(Bld_Path depfile);
+/* compute full cache key from input_hash, incorporating cached depfile if present */
+void bld__cache_compute_key(Bld* b, Bld_Step* step);
 
-/* content hashing */
-Bld_Hash bld__hash_artifact(Bld_Path art);
-
-/* lookup */
+/* check if step result is cached and valid */
 int bld__cache_has(Bld* b, Bld_Step* step);
 
-/* store */
-void bld__cache_store_depfile(Bld* b, Bld_Step* step, Bld_Path tmp_dep);
-void bld__cache_store_artifact(Bld* b, Bld_Step* step, Bld_Path tmp_out);
+/* store action results (depfile + artifact + meta) in cache */
+void bld__cache_store(Bld* b, Bld_Step* step, Bld_Path tmp_out, Bld_Path tmp_dep);

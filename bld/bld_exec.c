@@ -1,7 +1,6 @@
 /* bld/bld_exec.c — step execution, topo sort, parallel workers */
 #pragma once
 
-#include "bld_cache.h"
 #include "bld_build.c"
 
 /* ---- Build stats — stored on Bld, accessed atomically ---- */
@@ -38,13 +37,7 @@ static void bld__compute_step_hash(Bld* b, Bld_Step* step) {
     if (step->hash_fn)
         h = step->hash_fn(step->hash_fn_ctx, h);
     step->input_hash = h;
-
-    Bld_Hash full_h = h;
-    Bld_Path cached_dep = bld__step_depfile_cache(b, step);
-    int have_cached_depfile = step->has_depfile && bld_fs_exists(cached_dep);
-    if (have_cached_depfile)
-        full_h = bld_hash_combine(h, bld__hash_depfile_contents(cached_dep));
-    step->cache_key = full_h;
+    bld__cache_compute_key(b, step);
     step->hash_valid = 1;
 }
 
@@ -94,8 +87,7 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
         return;
     }
 
-    bld__cache_store_depfile(b, step, tmp_dep);
-    bld__cache_store_artifact(b, step, tmp_out);
+    bld__cache_store(b, step, tmp_out, tmp_dep);
 
     __atomic_fetch_add(&b->steps_executed, 1, __ATOMIC_RELAXED);
     if (!b->settings.silent) {
