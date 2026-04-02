@@ -1,6 +1,7 @@
 /* bld/bld_exec.c — step execution, topo sort, parallel workers */
 #pragma once
 
+#include "bld_cache.h"
 #include "bld_build.c"
 
 /* ---- Build stats — stored on Bld, accessed atomically ---- */
