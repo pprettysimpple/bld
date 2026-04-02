@@ -263,6 +263,8 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
 
     /* C compiler */
     const char *cc_env = getenv("CC"), *cc = cc_env ? cc_env : "cc";
+    if (!bld__has_in_path(cc) && !cc_env)
+        bld_panic("C compiler '%s' not found in PATH\n", cc);
     b->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
                                       .identity_hash = bld__make_identity_hash(cc), .available = 1};
     /* C++ compiler */

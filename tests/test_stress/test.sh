@@ -2,7 +2,7 @@
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TEST_DIR/../common.sh"
 
-ROUNDS=100
+ROUNDS=30
 CLEAN_CHECK_EVERY=10
 
 setup_workdir

@@ -49,7 +49,6 @@
 #define Toggle      Bld_Toggle
 #define ActionFn    Bld_ActionFn
 #define HashFn       Bld_HashFn
-#define RecipeHashFn Bld_HashFn
 #define TargetKind  Bld_TargetKind
 
 /* enums */
@@ -156,9 +155,9 @@
 #define target_output_sub        bld_output_sub
 #define target_add_include_dir   bld_add_include_dir
 #define target_add_source(t, s)  bld_add_source((t), (s))
-#define add_install_exe          bld_install_exe
-#define add_install_lib          bld_install_lib
-#define add_install              bld_install
+#define install_exe              bld_install_exe
+#define install_lib              bld_install_lib
+#define install_target           bld_install
 #define add_test(b, t, ...)      bld_add_test((b), (t), __VA_ARGS__)
 #define use_dep                  bld_use_dep
 #define override_file(t, f, ...) bld_override_file((t), (f), __VA_ARGS__)
@@ -172,23 +171,12 @@
 #define target_artifact          bld_target_artifact
 
 /* feature checks */
-#define ChecksContext            Bld_ChecksContext
 #define checks_new               bld_checks_new
-#define checks_set_context(c, ...) bld_checks_set_context((c), __VA_ARGS__)
 #define checks_header            bld_checks_header
 #define checks_func              bld_checks_func
 #define checks_sizeof            bld_checks_sizeof
 #define checks_compile           bld_checks_compile
-#define checks_func_link         bld_checks_func_link
-#define checks_link              bld_checks_link
-#define checks_has_flag          bld_checks_has_flag
-#define checks_has_link_flag     bld_checks_has_link_flag
-#define checks_compute_int       bld_checks_compute_int
-#define checks_get_define        bld_checks_get_define
-#define checks_has_type          bld_checks_has_type
-#define checks_has_member        bld_checks_has_member
 #define checks_run               bld_checks_run
 #define checks_write             bld_checks_write
-#define checks_write_template    bld_checks_write_template
 
 #endif /* BLD_STRIP_PREFIX */

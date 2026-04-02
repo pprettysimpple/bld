@@ -116,22 +116,22 @@ void configure(Bld* b) {
     link_with(tnet, sbase);
 
     /* ---- install all ---- */
-    add_install_exe(b, app_main);
-    add_install_exe(b, app_tool);
-    add_install_exe(b, app_serv);
-    add_install_exe(b, app_cli);
-    add_install_exe(b, tcore);
-    add_install_exe(b, tmath);
-    add_install_exe(b, tnet);
-    add_install_lib(b, sbase);
-    add_install_lib(b, core);
-    add_install_lib(b, math);
-    add_install_lib(b, text);
-    add_install_lib(b, io);
-    add_install_lib(b, util);
-    add_install_lib(b, fmt);
-    add_install_lib(b, net);
-    add_install_lib(b, pluga);
-    add_install_lib(b, plugb);
-    add_install_lib(b, plugc);
+    install_exe(b, app_main);
+    install_exe(b, app_tool);
+    install_exe(b, app_serv);
+    install_exe(b, app_cli);
+    install_exe(b, tcore);
+    install_exe(b, tmath);
+    install_exe(b, tnet);
+    install_lib(b, sbase);
+    install_lib(b, core);
+    install_lib(b, math);
+    install_lib(b, text);
+    install_lib(b, io);
+    install_lib(b, util);
+    install_lib(b, fmt);
+    install_lib(b, net);
+    install_lib(b, pluga);
+    install_lib(b, plugb);
+    install_lib(b, plugc);
 }

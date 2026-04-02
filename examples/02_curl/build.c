@@ -538,8 +538,8 @@ void configure(Bld* b) {
 
     /* ---- Installation ---- */
 
-    add_install_exe(b, curl_exe);
-    add_install_lib(b, libcurl);
+    install_exe(b, curl_exe);
+    install_lib(b, libcurl);
 
     /* Install public headers: include/curl/*.h → $(prefix)/include/curl/ */
     Target* hdrs = add_step(b,
@@ -548,7 +548,7 @@ void configure(Bld* b) {
         .action = install_headers_action,
         .action_ctx = b,
         .watch = BLD_PATHS("include/curl"));
-    add_install(b, hdrs, bld_path("include"));
+    install_target(b, hdrs, bld_path("include"));
 
     /* ---- Test ---- */
 

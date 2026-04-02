@@ -8,5 +8,5 @@ void configure(Bld* b) {
     Target* exe = add_exe(b, .name = "app",
         .sources = BLD_PATHS("src/main.c", "src/lib.c"),
         .compile = { .include_dirs = BLD_PATHS("src") });
-    add_install_exe(b, exe);
+    install_exe(b, exe);
 }

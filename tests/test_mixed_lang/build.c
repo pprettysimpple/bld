@@ -9,5 +9,5 @@ void configure(Bld* b) {
     Target* exe = add_exe(b, .name = "mixed",
         .sources = BLD_PATHS("src/main.c", "src/helper.cpp"),
         .compile = { .include_dirs = BLD_PATHS("src") });
-    add_install_exe(b, exe);
+    install_exe(b, exe);
 }

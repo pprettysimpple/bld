@@ -112,8 +112,8 @@ void configure(Bld* b) {
         .action_ctx = b,
         .watch = src_files);
 
-    add_install_lib(b, lib);
-    add_install(b, amalg, bld_path("include"));
+    install_lib(b, lib);
+    install_target(b, amalg, bld_path("include"));
 
     Target* selftest = add_step(b,
         .name = "selftest",

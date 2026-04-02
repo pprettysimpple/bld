@@ -75,6 +75,9 @@ void bld__override_file(Bld_Target* t, const char* file, const Bld_CompileFlags*
 /* bld__dep, bld_find_pkg — implemented in bld_dep.c */
 
 void bld_use_dep(Bld_Target* t, Bld_Dep* dep) {
+    if (dep && !dep->found)
+        bld_log_info("-- warning: using unfound dependency '%s' on target '%s'\n",
+                     dep->name ? dep->name : "(unnamed)", t->name);
     bld_da_push(&t->ext_deps, dep);
 }
 
@@ -134,6 +137,8 @@ void bld_depends_on(Bld_Target* a, Bld_Target* b) {
 }
 
 void bld_link_with(Bld_Target* a, Bld_Target* b) {
+    if (b->kind != BLD_TGT_EXE && b->kind != BLD_TGT_LIB)
+        bld_panic("link_with: target '%s' is not an exe or lib (got custom step '%s')\n", a->name, b->name);
     bld_da_push(&a->link_deps, b);
 }
 

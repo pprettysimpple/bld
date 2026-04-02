@@ -7,5 +7,5 @@ void configure(Bld* b) {
     set_compiler_c(b, .standard = C_11);
     Target* exe = add_exe(b, .name = "app",
         .sources = BLD_PATHS("src/main.c", "src/util.c"));
-    add_install_exe(b, exe);
+    install_exe(b, exe);
 }
