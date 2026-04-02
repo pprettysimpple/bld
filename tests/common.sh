@@ -12,6 +12,7 @@ set -euo pipefail
 WORKDIR=""
 BUILD_OUTPUT=""
 BUILD_EXIT=0
+COVERAGE="${COVERAGE:-0}"
 
 # ---- Setup / Teardown ----
 
@@ -35,6 +36,9 @@ setup_workdir() {
 }
 
 cleanup() {
+    if [ "$COVERAGE" -eq 1 ]; then
+        return  # keep workdir for gcda collection
+    fi
     if [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ]; then
         rm -rf "$WORKDIR"
     fi
@@ -43,7 +47,13 @@ cleanup() {
 # ---- Build helpers ----
 
 bld_bootstrap() {
-    cc -std=c11 -w build.c -o b -lpthread 2>&1 || die "bootstrap failed"
+    local cov_flags=""
+    if [ "$COVERAGE" -eq 1 ]; then
+        cov_flags="--coverage"
+        # patch BLD_RECOMPILE_CMD to include --coverage
+        sed -i 's/cc -std=c11 -w/cc -std=c11 -w --coverage/' build.c
+    fi
+    cc -std=c11 -w $cov_flags build.c -o b -lpthread 2>&1 || die "bootstrap failed"
 }
 
 bld_install() {
