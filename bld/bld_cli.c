@@ -168,12 +168,12 @@ static int bld__handle_test(Bld* b) {
         Bld_Path log_path = bld_path_join(test_dir, bld_path(bld_str_fmt("%s.log", te->name)));
 
         /* build command */
-        Bld__Cmd cmd = {0};
+        Bld_Cmd cmd = {0};
         if (te->working_dir && te->working_dir[0])
-            bld__cmd_appendf(&cmd, "cd \"%s\" && ", te->working_dir);
-        bld__cmd_appendf(&cmd, "\"%s\"", exe_path.s);
-        if (te->args) for (const char** a = te->args; *a; a++) bld__cmd_appendf(&cmd, " \"%s\"", *a);
-        bld__cmd_appendf(&cmd, " > \"%s\" 2>&1", log_path.s);
+            bld_cmd_appendf(&cmd, "cd \"%s\" && ", te->working_dir);
+        bld_cmd_appendf(&cmd, "\"%s\"", exe_path.s);
+        if (te->args) for (const char** a = te->args; *a; a++) bld_cmd_appendf(&cmd, " \"%s\"", *a);
+        bld_cmd_appendf(&cmd, " > \"%s\" 2>&1", log_path.s);
 
         struct timespec st0;
         clock_gettime(CLOCK_MONOTONIC, &st0);
@@ -308,16 +308,16 @@ static void bld__init(Bld* b, int argc, char** argv) {
 
 /* ---- compile_commands.json ---- */
 
-static void bld__escape_json(Bld__Cmd* out, const char* s) {
+static void bld__escape_json(Bld_Cmd* out, const char* s) {
     for (; *s; s++) {
-        if (*s == '"' || *s == '\\') { char tmp[3] = {'\\', *s, 0}; bld__cmd_appendf(out, "%s", tmp); }
-        else { char tmp[2] = {*s, 0}; bld__cmd_appendf(out, "%s", tmp); }
+        if (*s == '"' || *s == '\\') { char tmp[3] = {'\\', *s, 0}; bld_cmd_appendf(out, "%s", tmp); }
+        else { char tmp[2] = {*s, 0}; bld_cmd_appendf(out, "%s", tmp); }
     }
 }
 
 static void bld__write_compdb(Bld* b) {
-    Bld__Cmd json = {0};
-    bld__cmd_appendf(&json, "[\n");
+    Bld_Cmd json = {0};
+    bld_cmd_appendf(&json, "[\n");
     int first = 1;
 
     for (size_t i = 0; i < b->all_targets.count; i++) {
@@ -333,23 +333,23 @@ static void bld__write_compdb(Bld* b) {
             if (!step->action_ctx) continue;
             Bld__ObjCtx* ctx = (Bld__ObjCtx*)step->action_ctx;
 
-            Bld__Cmd cmd = {0};
+            Bld_Cmd cmd = {0};
             bld__render_obj_cmd(&cmd, ctx);
 
-            if (!first) bld__cmd_appendf(&json, ",\n");
+            if (!first) bld_cmd_appendf(&json, ",\n");
             first = 0;
 
-            bld__cmd_appendf(&json, "  { \"directory\": \"");
+            bld_cmd_appendf(&json, "  { \"directory\": \"");
             bld__escape_json(&json, b->root.s);
-            bld__cmd_appendf(&json, "\", \"file\": \"");
+            bld_cmd_appendf(&json, "\", \"file\": \"");
             bld__escape_json(&json, ctx->source.s);
-            bld__cmd_appendf(&json, "\", \"command\": \"");
+            bld_cmd_appendf(&json, "\", \"command\": \"");
             bld__escape_json(&json, cmd.items);
-            bld__cmd_appendf(&json, "\" }");
+            bld_cmd_appendf(&json, "\" }");
         }
     }
 
-    bld__cmd_appendf(&json, "\n]\n");
+    bld_cmd_appendf(&json, "\n]\n");
     Bld_Path out = bld_path_join(b->root, bld_path("compile_commands.json"));
     bld_fs_write_file(out, json.items, json.count);
 }

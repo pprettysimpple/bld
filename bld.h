@@ -23,6 +23,7 @@
 /* types */
 #define Arena       Bld_Arena
 #define Path        Bld_Path
+#define Cmd         Bld_Cmd
 #define Hash        Bld_Hash
 #define PathList    Bld_PathList
 #define Target      Bld_Target
@@ -123,6 +124,10 @@
 #define files_merge     bld_files_merge
 
 /* log — not stripped: "log" and "panic" conflict with common names */
+
+/* cmd */
+#define cmd_appendf   bld_cmd_appendf
+#define cmd_append_sq bld_cmd_append_sq
 
 /* hash */
 #define hash_combine           bld_hash_combine

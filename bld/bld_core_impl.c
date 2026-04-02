@@ -319,6 +319,42 @@ void bld_log_info(const char* fmt, ...) {
 }
 
 /* ================================================================
+ *  Cmd — growable string buffer
+ * ================================================================ */
+
+void bld_cmd_appendf(Bld_Cmd* cmd, const char* fmt, ...) {
+    va_list ap, ap2;
+    va_start(ap, fmt);
+    va_copy(ap2, ap);
+    int n = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+    if (n <= 0) { va_end(ap2); return; }
+    size_t needed = cmd->count + (size_t)n + 1;
+    if (needed > cmd->cap) {
+        size_t new_cap = cmd->cap ? cmd->cap : 64;
+        while (new_cap < needed) new_cap *= 2;
+        cmd->items = bld_arena_realloc(cmd->items, cmd->cap, new_cap);
+        cmd->cap = new_cap;
+    }
+    vsnprintf(cmd->items + cmd->count, (size_t)n + 1, fmt, ap2);
+    va_end(ap2);
+    cmd->count += (size_t)n;
+}
+
+void bld_cmd_append_sq(Bld_Cmd* cmd, const char* s) {
+    if (!strchr(s, '\'')) {
+        bld_cmd_appendf(cmd, "'%s'", s);
+    } else {
+        bld_cmd_appendf(cmd, "'");
+        for (const char* c = s; *c; c++) {
+            if (*c == '\'') bld_cmd_appendf(cmd, "'\\''");
+            else { char tmp[2] = {*c, 0}; bld_cmd_appendf(cmd, "%s", tmp); }
+        }
+        bld_cmd_appendf(cmd, "'");
+    }
+}
+
+/* ================================================================
  *  Hash
  * ================================================================ */
 

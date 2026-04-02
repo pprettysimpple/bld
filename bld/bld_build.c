@@ -333,44 +333,7 @@ void bld_add_source(Bld_Target* t, Bld_LazyPath src) {
     bld_da_push(&t->lazy_sources, src);
 }
 
-/* ================================================================
- *  Command buffer
- * ================================================================ */
-
-typedef struct { char* items; size_t count, cap; } Bld__Cmd;
-
-static void bld__cmd_appendf(Bld__Cmd* cmd, const char* fmt, ...) {
-    va_list ap, ap2;
-    va_start(ap, fmt);
-    va_copy(ap2, ap);
-    int n = vsnprintf(NULL, 0, fmt, ap);
-    va_end(ap);
-    if (n <= 0) { va_end(ap2); return; }
-    size_t needed = cmd->count + (size_t)n + 1;
-    if (needed > cmd->cap) {
-        size_t new_cap = cmd->cap ? cmd->cap : 64;
-        while (new_cap < needed) new_cap *= 2;
-        cmd->items = bld_arena_realloc(cmd->items, cmd->cap, new_cap);
-        cmd->cap = new_cap;
-    }
-    vsnprintf(cmd->items + cmd->count, (size_t)n + 1, fmt, ap2);
-    va_end(ap2);
-    cmd->count += (size_t)n;
-}
-
-/* shell-safe single-quote a string */
-static void bld__cmd_append_sq(Bld__Cmd* cmd, const char* s) {
-    if (!strchr(s, '\'')) {
-        bld__cmd_appendf(cmd, "'%s'", s);
-    } else {
-        bld__cmd_appendf(cmd, "'");
-        for (const char* c = s; *c; c++) {
-            if (*c == '\'') bld__cmd_appendf(cmd, "'\\''");
-            else { char tmp[2] = {*c, 0}; bld__cmd_appendf(cmd, "%s", tmp); }
-        }
-        bld__cmd_appendf(cmd, "'");
-    }
-}
+/* Bld_Cmd, bld_cmd_appendf, bld_cmd_append_sq — declared in bld_core.h, implemented in bld_core_impl.c */
 
 /* ================================================================
  *  Flag rendering
@@ -418,46 +381,46 @@ static int bld__toggle_val(Bld_Toggle t, Bld_Toggle global) {
     return global == BLD_ON ? 1 : 0;
 }
 
-static void bld__cmd_render_compile(Bld__Cmd* cmd, Bld* b, Bld_Compiler* comp,
+static void bld__cmd_render_compile(Bld_Cmd* cmd, Bld* b, Bld_Compiler* comp,
                                      const Bld_CompileFlags* f, const Bld_LinkFlags* lf) {
-    bld__cmd_appendf(cmd, "%s", comp->driver);
+    bld_cmd_appendf(cmd, "%s", comp->driver);
     Bld_Optimize opt = f->optimize ? f->optimize : b->global_optimize;
     int warnings = (f->warnings == BLD_ON) ? 1 : (f->warnings == BLD_OFF) ? 0 : b->global_warnings;
 
-    const char* os = bld__resolve_optimize(opt); if (os[0]) bld__cmd_appendf(cmd, " %s", os);
+    const char* os = bld__resolve_optimize(opt); if (os[0]) bld_cmd_appendf(cmd, " %s", os);
     const char* ss = "";
     if (comp->lang == BLD_LANG_C) ss = bld__resolve_c_standard(comp->c.standard);
     else if (comp->lang == BLD_LANG_CXX) ss = bld__resolve_cxx_standard(comp->cxx.standard);
-    if (ss[0]) bld__cmd_appendf(cmd, " %s", ss);
-    if (!warnings) bld__cmd_appendf(cmd, " -w");
-    if (warnings) bld__cmd_appendf(cmd, " -Wall");
-    if (f->extra_flags && f->extra_flags[0]) bld__cmd_appendf(cmd, " %s", f->extra_flags);
+    if (ss[0]) bld_cmd_appendf(cmd, " %s", ss);
+    if (!warnings) bld_cmd_appendf(cmd, " -w");
+    if (warnings) bld_cmd_appendf(cmd, " -Wall");
+    if (f->extra_flags && f->extra_flags[0]) bld_cmd_appendf(cmd, " %s", f->extra_flags);
     if (f->defines) for (const char** d = f->defines; *d; d++) {
-        bld__cmd_appendf(cmd, " -D");
-        bld__cmd_append_sq(cmd, *d);
+        bld_cmd_appendf(cmd, " -D");
+        bld_cmd_append_sq(cmd, *d);
     }
-    if (f->include_dirs) for (const char** d = f->include_dirs; *d; d++) bld__cmd_appendf(cmd, " -I%s", *d);
-    if (f->system_include_dirs) for (const char** d = f->system_include_dirs; *d; d++) bld__cmd_appendf(cmd, " -isystem %s", *d);
+    if (f->include_dirs) for (const char** d = f->include_dirs; *d; d++) bld_cmd_appendf(cmd, " -I%s", *d);
+    if (f->system_include_dirs) for (const char** d = f->system_include_dirs; *d; d++) bld_cmd_appendf(cmd, " -isystem %s", *d);
     if (lf) {
-        if (bld__toggle_val(lf->debug_info, b->global_link.debug_info)) bld__cmd_appendf(cmd, " -g");
-        if (bld__toggle_val(lf->asan, b->global_link.asan)) bld__cmd_appendf(cmd, " -fsanitize=address");
-        if (bld__toggle_val(lf->lto, b->global_link.lto)) bld__cmd_appendf(cmd, " -flto");
+        if (bld__toggle_val(lf->debug_info, b->global_link.debug_info)) bld_cmd_appendf(cmd, " -g");
+        if (bld__toggle_val(lf->asan, b->global_link.asan)) bld_cmd_appendf(cmd, " -fsanitize=address");
+        if (bld__toggle_val(lf->lto, b->global_link.lto)) bld_cmd_appendf(cmd, " -flto");
     }
 }
 
-static void bld__cmd_append_inputs(Bld__Cmd* cmd, Bld* b, Bld_Step* exit_step) {
+static void bld__cmd_append_inputs(Bld_Cmd* cmd, Bld* b, Bld_Step* exit_step) {
     for (size_t i = 0; i < exit_step->inputs.count; i++) {
         Bld_Step* inp = exit_step->inputs.items[i];
-        if (inp->hash_valid) bld__cmd_appendf(cmd, " \"%s\"", bld__step_artifact(b, inp).s);
+        if (inp->hash_valid) bld_cmd_appendf(cmd, " \"%s\"", bld__step_artifact(b, inp).s);
     }
 }
 
-static void bld__cmd_render_link(Bld__Cmd* cmd, Bld* b, Bld_Compiler* comp, const Bld_LinkFlags* lf) {
-    bld__cmd_appendf(cmd, "%s", comp->driver);
+static void bld__cmd_render_link(Bld_Cmd* cmd, Bld* b, Bld_Compiler* comp, const Bld_LinkFlags* lf) {
+    bld_cmd_appendf(cmd, "%s", comp->driver);
     if (lf) {
-        if (bld__toggle_val(lf->debug_info, b->global_link.debug_info)) bld__cmd_appendf(cmd, " -g");
-        if (bld__toggle_val(lf->asan, b->global_link.asan)) bld__cmd_appendf(cmd, " -fsanitize=address");
-        if (bld__toggle_val(lf->lto, b->global_link.lto)) bld__cmd_appendf(cmd, " -flto");
+        if (bld__toggle_val(lf->debug_info, b->global_link.debug_info)) bld_cmd_appendf(cmd, " -g");
+        if (bld__toggle_val(lf->asan, b->global_link.asan)) bld_cmd_appendf(cmd, " -fsanitize=address");
+        if (bld__toggle_val(lf->lto, b->global_link.lto)) bld_cmd_appendf(cmd, " -flto");
     }
 }
 
@@ -563,31 +526,31 @@ static Bld_Path bld__obj_source(Bld__ObjCtx* c) {
 }
 
 /* render compile command prefix (flags + includes, without -c -o -MMD) */
-static void bld__render_obj_cmd(Bld__Cmd* cmd, Bld__ObjCtx* c) {
+static void bld__render_obj_cmd(Bld_Cmd* cmd, Bld__ObjCtx* c) {
     Bld_CompileFlags flags = bld__resolve_obj_flags(c);
     Bld_Compiler* comp = bld_compiler(c->b, c->lang);
     bld__cmd_render_compile(cmd, c->b, comp, &flags, c->link);
-    if (c->pic) bld__cmd_appendf(cmd, " -fPIC");
+    if (c->pic) bld_cmd_appendf(cmd, " -fPIC");
     for (size_t i = 0; i < c->parent->include_dirs.count; i++) {
         Bld_Path dir = bld__resolve_lazy(c->b, c->parent->include_dirs.items[i]);
-        bld__cmd_appendf(cmd, " -I\"%s\"", dir.s);
+        bld_cmd_appendf(cmd, " -I\"%s\"", dir.s);
     }
     for (size_t i = 0; i < c->parent->ext_deps.count; i++) {
         Bld_Dep* d = c->parent->ext_deps.items[i];
-        if (d->include_dirs) for (const char** p = d->include_dirs; *p; p++) bld__cmd_appendf(cmd, " -I%s", *p);
-        if (d->system_include_dirs) for (const char** p = d->system_include_dirs; *p; p++) bld__cmd_appendf(cmd, " -isystem %s", *p);
-        if (d->extra_cflags && d->extra_cflags[0]) bld__cmd_appendf(cmd, " %s", d->extra_cflags);
+        if (d->include_dirs) for (const char** p = d->include_dirs; *p; p++) bld_cmd_appendf(cmd, " -I%s", *p);
+        if (d->system_include_dirs) for (const char** p = d->system_include_dirs; *p; p++) bld_cmd_appendf(cmd, " -isystem %s", *p);
+        if (d->extra_cflags && d->extra_cflags[0]) bld_cmd_appendf(cmd, " %s", d->extra_cflags);
     }
-    bld__cmd_appendf(cmd, " \"%s\"", bld__obj_source(c).s);
+    bld_cmd_appendf(cmd, " \"%s\"", bld__obj_source(c).s);
 }
 
 static Bld_ActionResult bld__obj_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     Bld__ObjCtx* c = ctx;
-    Bld__Cmd cmd = {0};
+    Bld_Cmd cmd = {0};
     bld__render_obj_cmd(&cmd, c);
-    bld__cmd_appendf(&cmd, " -c -o %s", output.s);
+    bld_cmd_appendf(&cmd, " -c -o %s", output.s);
     if (depfile.s && depfile.s[0])
-        bld__cmd_appendf(&cmd, " -MMD -MF %s", depfile.s);
+        bld_cmd_appendf(&cmd, " -MMD -MF %s", depfile.s);
     if (c->b->settings.verbose) bld_log_action("compile: %s\n", cmd.items);
     int rc = system(cmd.items);
     if (rc != 0) return BLD_ACTION_FAILED;
@@ -716,29 +679,29 @@ typedef struct { Bld* b; Bld_Exe* exe; } Bld__ExeCtx;
 static Bld_ActionResult bld__link_exe_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     (void)depfile;
     Bld__ExeCtx* c = ctx;
-    Bld__Cmd cmd = {0};
+    Bld_Cmd cmd = {0};
     Bld_Compiler* linker = bld__link_compiler(c->b, &c->exe->obj_steps);
     bld__cmd_render_link(&cmd, c->b, linker, &c->exe->opts.link);
     bld__cmd_append_inputs(&cmd, c->b, c->exe->target.exit);
     if (c->exe->shared_libs.count > 0) {
         Bld_Path libdir = bld_path_join(c->b->out, bld_path("lib"));
-        bld__cmd_appendf(&cmd, " -L\"%s\"", libdir.s);
+        bld_cmd_appendf(&cmd, " -L\"%s\"", libdir.s);
         for (size_t i = 0; i < c->exe->shared_libs.count; i++) {
             Bld_Lib* lib = c->exe->shared_libs.items[i];
-            bld__cmd_appendf(&cmd, " -l%s", lib->opts.name);
+            bld_cmd_appendf(&cmd, " -l%s", lib->opts.name);
         }
-        bld__cmd_appendf(&cmd, " -Wl,-rpath,$ORIGIN/../lib");
+        bld_cmd_appendf(&cmd, " -Wl,-rpath,$ORIGIN/../lib");
     }
-    bld__cmd_appendf(&cmd, " -o %s", output.s);
+    bld_cmd_appendf(&cmd, " -o %s", output.s);
     /* ext_deps: transitive link flags */
     for (size_t i = 0; i < c->exe->resolved_ext_deps.count; i++) {
         Bld_Dep* d = c->exe->resolved_ext_deps.items[i];
-        if (d->lib_dirs) for (const char** p = d->lib_dirs; *p; p++) bld__cmd_appendf(&cmd, " -L%s", *p);
-        if (d->libs) for (const char** p = d->libs; *p; p++) bld__cmd_appendf(&cmd, " -l%s", *p);
-        if (d->extra_ldflags && d->extra_ldflags[0]) bld__cmd_appendf(&cmd, " %s", d->extra_ldflags);
+        if (d->lib_dirs) for (const char** p = d->lib_dirs; *p; p++) bld_cmd_appendf(&cmd, " -L%s", *p);
+        if (d->libs) for (const char** p = d->libs; *p; p++) bld_cmd_appendf(&cmd, " -l%s", *p);
+        if (d->extra_ldflags && d->extra_ldflags[0]) bld_cmd_appendf(&cmd, " %s", d->extra_ldflags);
     }
     if (c->exe->opts.link.extra_flags && c->exe->opts.link.extra_flags[0])
-        bld__cmd_appendf(&cmd, " %s", c->exe->opts.link.extra_flags);
+        bld_cmd_appendf(&cmd, " %s", c->exe->opts.link.extra_flags);
     if (c->b->settings.verbose) bld_log_action("link exe: %s\n", cmd.items);
     int rc = system(cmd.items);
     if (rc != 0) return BLD_ACTION_FAILED;
@@ -811,20 +774,20 @@ static const char* bld__lib_filename(const Bld_LibOpts* o) {
 static Bld_ActionResult bld__link_lib_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     (void)depfile;
     Bld__LibCtx* c = ctx;
-    Bld__Cmd cmd = {0};
+    Bld_Cmd cmd = {0};
     if (!c->lib->opts.shared) {
         if (!c->b->static_link_tool) bld_panic("no ar/llvm-ar found for static linking\n");
-        bld__cmd_appendf(&cmd, "%s rcs %s", c->b->static_link_tool, output.s);
+        bld_cmd_appendf(&cmd, "%s rcs %s", c->b->static_link_tool, output.s);
         bld__cmd_append_inputs(&cmd, c->b, c->lib->target.exit);
     } else {
         const char* soname = bld__lib_filename(&c->lib->opts);
         Bld_Compiler* linker = bld__link_compiler(c->b, &c->lib->obj_steps);
         bld__cmd_render_link(&cmd, c->b, linker, &c->lib->opts.link);
-        bld__cmd_appendf(&cmd, " -shared -Wl,-soname,%s", soname);
+        bld_cmd_appendf(&cmd, " -shared -Wl,-soname,%s", soname);
         bld__cmd_append_inputs(&cmd, c->b, c->lib->target.exit);
-        bld__cmd_appendf(&cmd, " -o %s", output.s);
+        bld_cmd_appendf(&cmd, " -o %s", output.s);
         if (c->lib->opts.link.extra_flags && c->lib->opts.link.extra_flags[0])
-            bld__cmd_appendf(&cmd, " %s", c->lib->opts.link.extra_flags);
+            bld_cmd_appendf(&cmd, " %s", c->lib->opts.link.extra_flags);
     }
     if (c->b->settings.verbose) bld_log_action("link lib: %s\n", cmd.items);
     int rc = system(cmd.items);
@@ -951,12 +914,12 @@ typedef struct { Bld* b; Bld_Target* exe_tgt; Bld_RunOpts opts; } Bld__RunCtx;
 static Bld_ActionResult bld__run_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     (void)output; (void)depfile;
     Bld__RunCtx* c = ctx;
-    Bld__Cmd cmd = {0};
+    Bld_Cmd cmd = {0};
     if (c->opts.working_dir && c->opts.working_dir[0])
-        bld__cmd_appendf(&cmd, "cd \"%s\" && ", c->opts.working_dir);
-    bld__cmd_appendf(&cmd, "\"%s\"", bld__target_artifact(c->b, c->exe_tgt).s);
-    if (c->opts.args) for (const char** a = c->opts.args; *a; a++) bld__cmd_appendf(&cmd, " \"%s\"", *a);
-    if (c->b->settings.passthrough) for (const char** a = c->b->settings.passthrough; *a; a++) bld__cmd_appendf(&cmd, " \"%s\"", *a);
+        bld_cmd_appendf(&cmd, "cd \"%s\" && ", c->opts.working_dir);
+    bld_cmd_appendf(&cmd, "\"%s\"", bld__target_artifact(c->b, c->exe_tgt).s);
+    if (c->opts.args) for (const char** a = c->opts.args; *a; a++) bld_cmd_appendf(&cmd, " \"%s\"", *a);
+    if (c->b->settings.passthrough) for (const char** a = c->b->settings.passthrough; *a; a++) bld_cmd_appendf(&cmd, " \"%s\"", *a);
     int rc = system(cmd.items);
     if (rc != 0) return BLD_ACTION_FAILED;
     return BLD_ACTION_OK;
@@ -1300,20 +1263,20 @@ void bld_checks_run(Bld_Checks* c) {
 }
 
 void bld_checks_write(Bld_Checks* c, const char* path) {
-    Bld__Cmd out = {0};
-    bld__cmd_appendf(&out, "/* generated by bld feature checks */\n");
+    Bld_Cmd out = {0};
+    bld_cmd_appendf(&out, "/* generated by bld feature checks */\n");
     for (size_t i = 0; i < c->count; i++) {
         Bld__Check* ch = &c->items[i];
         if (ch->bool_result) {
             if (*ch->bool_result)
-                bld__cmd_appendf(&out, "#define %s 1\n", ch->define_name);
+                bld_cmd_appendf(&out, "#define %s 1\n", ch->define_name);
             else
-                bld__cmd_appendf(&out, "/* %s not found */\n", ch->define_name);
+                bld_cmd_appendf(&out, "/* %s not found */\n", ch->define_name);
         } else if (ch->int_result) {
             if (*ch->int_result > 0)
-                bld__cmd_appendf(&out, "#define %s %d\n", ch->define_name, *ch->int_result);
+                bld_cmd_appendf(&out, "#define %s %d\n", ch->define_name, *ch->int_result);
             else
-                bld__cmd_appendf(&out, "/* %s unknown */\n", ch->define_name);
+                bld_cmd_appendf(&out, "/* %s unknown */\n", ch->define_name);
         }
     }
     Bld_Path full = bld_path_join(c->parent->root, bld_path(path));

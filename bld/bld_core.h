@@ -86,6 +86,13 @@ typedef BLD_DA(const char*)    Bld_Strings;
 Bld_Strings bld_str_lines(const char* s);
 const char* bld_str_join(const Bld_Strings* parts, const char* sep);
 
+/* ===== Cmd — growable string buffer (arena-backed) ===== */
+
+typedef struct { char* items; size_t count, cap; } Bld_Cmd;
+
+void bld_cmd_appendf(Bld_Cmd* cmd, const char* fmt, ...);
+void bld_cmd_append_sq(Bld_Cmd* cmd, const char* s); /* shell-safe single-quote */
+
 /* ===== Hash ===== */
 
 typedef struct { uint64_t value; } Bld_Hash;
