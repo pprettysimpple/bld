@@ -326,7 +326,8 @@ typedef struct {
     const char*      output_name; /* override lib filename base (default: name) */
     const char**     sources;
     Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
-    Bld_CompileFlags compile;
+    Bld_CompileFlags compile;      /* private: for compiling this lib's sources */
+    Bld_CompileFlags compile_pub;  /* public: propagated to targets that link_with this lib */
     Bld_LinkFlags    link;
     int              shared;  /* 0 = static (default), 1 = shared */
 } Bld_LibOpts;

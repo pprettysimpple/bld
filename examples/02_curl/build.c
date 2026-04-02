@@ -473,10 +473,6 @@ void configure(Bld* b) {
     lib_cflags.defines = lib_defs.items;
     lib_cflags.include_dirs = BLD_PATHS("include", "lib", "generated");
 
-    /*
-     * curl compiles ALL source files unconditionally — feature gating is
-     * via #ifdef inside the .c files, not by excluding files from the build.
-     */
     const char** lib_srcs = files_glob("lib/**/*.c");
 
     Target* libcurl = add_lib(b,
@@ -484,9 +480,11 @@ void configure(Bld* b) {
         .output_name = "libcurl",
         .desc = "libcurl static library",
         .sources = lib_srcs,
-        .compile = lib_cflags);
+        .compile = lib_cflags,
+        .compile_pub = {
+            .include_dirs = BLD_PATHS("include", "lib", "generated"),
+        });
 
-    /* Apply external dependencies to the library */
     if (has_ssl)     use_dep(libcurl, dep_ssl);
     if (has_zlib)    use_dep(libcurl, dep_zlib);
     if (has_nghttp2) use_dep(libcurl, dep_nghttp2);
@@ -498,12 +496,6 @@ void configure(Bld* b) {
     if (has_cares)   use_dep(libcurl, dep_cares);
 
     /* ---- curl executable ---- */
-
-    CompileFlags tool_cflags = default_compile_flags(b);
-    tool_cflags.optimize = OPT_O2;
-    tool_cflags.extra_flags = "-D_GNU_SOURCE";
-    tool_cflags.defines = tool_defs.items;
-    tool_cflags.include_dirs = BLD_PATHS("include", "lib", "src", "generated");
 
     /*
      * The tool uses curlx_* functions which are Curl_* functions renamed
@@ -517,6 +509,12 @@ void configure(Bld* b) {
         "lib/timediff.c", "lib/version_win32.c", "lib/warnless.c");
     const char** tool_srcs = files_merge(files_glob("src/**/*.c"), curlx_srcs);
 
+    CompileFlags tool_cflags = default_compile_flags(b);
+    tool_cflags.optimize = OPT_O2;
+    tool_cflags.extra_flags = "-D_GNU_SOURCE";
+    tool_cflags.defines = tool_defs.items;
+    tool_cflags.include_dirs = BLD_PATHS("src");
+
     Target* curl_exe = add_exe(b,
         .name = "curl",
         .desc = "curl command-line tool",
@@ -524,17 +522,7 @@ void configure(Bld* b) {
         .compile = tool_cflags,
         .link = (LinkFlags){ .extra_flags = "-lpthread" });
     link_with(curl_exe, libcurl);
-
-    /* Static link: tool needs all lib deps for symbol resolution */
-    if (has_ssl)     use_dep(curl_exe, dep_ssl);
-    if (has_zlib)    use_dep(curl_exe, dep_zlib);
-    if (has_nghttp2) use_dep(curl_exe, dep_nghttp2);
-    if (has_ssh2)    use_dep(curl_exe, dep_ssh2);
-    if (has_idn2)    use_dep(curl_exe, dep_idn2);
-    if (has_psl)     use_dep(curl_exe, dep_psl);
-    if (has_brotli)  use_dep(curl_exe, dep_brotli);
-    if (has_zstd)    use_dep(curl_exe, dep_zstd);
-    if (has_cares)   use_dep(curl_exe, dep_cares);
+    /* ext_deps (ssl, zlib, etc.) propagate transitively from libcurl via link_with */
 
     /* ---- Installation ---- */
 

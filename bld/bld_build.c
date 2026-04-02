@@ -207,6 +207,35 @@ static void bld__resolve_link_deps(Bld* b) {
                 for (size_t k = 0; k < dep->ext_deps.count; k++)
                     bld__push_ext_dep_dedup(exe, dep->ext_deps.items[k]);
             }
+
+            /* propagate compile_pub from lib deps as synthetic ext_dep */
+            if (dep->kind == BLD_TGT_LIB) {
+                Bld_CompileFlags* pub = &((Bld_Lib*)dep)->opts.compile_pub;
+                if (pub->include_dirs || pub->system_include_dirs ||
+                    pub->defines || pub->extra_flags) {
+                    /* build extra_cflags from defines */
+                    const char* dcflags = NULL;
+                    if (pub->defines) {
+                        Bld_Cmd dc = {0};
+                        for (const char** d = pub->defines; *d; d++)
+                            bld_cmd_appendf(&dc, " -D%s", *d);
+                        if (pub->extra_flags)
+                            bld_cmd_appendf(&dc, " %s", pub->extra_flags);
+                        dcflags = dc.items;
+                    } else {
+                        dcflags = pub->extra_flags;
+                    }
+                    Bld_Dep* syn = bld_arena_alloc(sizeof(Bld_Dep));
+                    *syn = (Bld_Dep){
+                        .name = bld_str_fmt("%s:pub", dep->name),
+                        .found = 1,
+                        .include_dirs = pub->include_dirs,
+                        .system_include_dirs = pub->system_include_dirs,
+                        .extra_cflags = dcflags,
+                    };
+                    bld_da_push(&t->ext_deps, syn);
+                }
+            }
         }
     }
 }
@@ -717,6 +746,7 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
     lib->opts.output_name = opts->output_name ? bld_str_dup(opts->output_name) : NULL;
     lib->opts.sources = bld_dup_strarray(opts->sources);
     lib->opts.compile = bld_clone_compile_flags(opts->compile);
+    lib->opts.compile_pub = bld_clone_compile_flags(opts->compile_pub);
     if (opts->link.extra_flags) lib->opts.link.extra_flags = bld_str_dup(opts->link.extra_flags);
 
     bld__init_target(b, &lib->target, BLD_TGT_LIB, lib->opts.name, lib->opts.desc);
