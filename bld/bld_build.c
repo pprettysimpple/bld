@@ -329,6 +329,8 @@ static void bld__push_ext_dep_dedup(Bld_Exe* exe, Bld_Dep* dep) {
     bld_da_push(&exe->resolved_ext_deps, dep);
 }
 
+static Bld_Step* bld__ensure_publish_step(Bld* b, Bld_Lib* lib);
+
 /* wire up link deps into steps (called after configure, before build) */
 static void bld__resolve_link_deps(Bld* b) {
     for (size_t i = 0; i < b->all_targets.count; i++) {
@@ -354,7 +356,10 @@ static void bld__resolve_link_deps(Bld* b) {
             if (t->kind == BLD_TGT_LIB && dep->kind == BLD_TGT_LIB) {
                 /* static lib → static lib: ordering only */
             } else if (dep->kind == BLD_TGT_LIB && ((Bld_Lib*)dep)->opts.shared && t->kind == BLD_TGT_EXE) {
-                bld_da_push(&bld__as_exe(t)->shared_libs, (Bld_Lib*)dep);
+                Bld_Lib* slib = (Bld_Lib*)dep;
+                bld_da_push(&bld__as_exe(t)->shared_libs, slib);
+                Bld_Step* pub = bld__ensure_publish_step(b, slib);
+                bld_da_push(&t->exit->deps, pub);
             } else {
                 bld_da_push(&t->exit->inputs, dep->exit);
             }
@@ -1027,6 +1032,35 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
     }
     bld_da_push(&b->build_all_target->entry->deps, lib->target.exit);
     return &lib->target;
+}
+
+/* ---- Shared lib publish (copy .so to out/lib/ for exe linking) ---- */
+
+typedef struct { Bld* b; Bld_Lib* lib; } Bld__PublishCtx;
+
+static Bld_ActionResult bld__publish_lib_action(void* ctx, Bld_Path output, Bld_Path depfile) {
+    (void)output; (void)depfile;
+    Bld__PublishCtx* c = ctx;
+    Bld_Path src = bld__target_artifact(c->b, &c->lib->target);
+    Bld_Path dst = bld_path_join(bld_path_join(c->b->out, bld_path("lib")),
+                                 bld_path(bld__lib_filename(&c->lib->opts)));
+    bld_fs_mkdir_p(bld_path_parent(dst));
+    bld_fs_copy_file(src, dst);
+    return BLD_ACTION_OK;
+}
+
+static Bld_Step* bld__ensure_publish_step(Bld* b, Bld_Lib* lib) {
+    if (lib->publish_step) return lib->publish_step;
+    const char* name = bld_str_fmt("publish:%s", lib->opts.name);
+    Bld_Step* s = bld__alloc_step(b, name, 1);
+    s->phony = 1;
+    bld_da_push(&s->deps, lib->target.exit);
+    Bld__PublishCtx* ctx = bld_arena_alloc(sizeof(Bld__PublishCtx));
+    *ctx = (Bld__PublishCtx){.b = b, .lib = lib};
+    s->action = bld__publish_lib_action;
+    s->action_ctx = ctx;
+    lib->publish_step = s;
+    return s;
 }
 
 /* ================================================================

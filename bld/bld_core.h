@@ -344,6 +344,7 @@ typedef struct {
     Bld_Target        target;     /* MUST be first */
     Bld_LibOpts       opts;
     Bld_StepList      obj_steps;
+    Bld_Step*         publish_step; /* copies .so to out/lib/ for exe linking */
 } Bld_Lib;
 
 typedef BLD_DA(Bld_Lib*) Bld_LibList;
