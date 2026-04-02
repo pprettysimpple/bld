@@ -3,6 +3,9 @@
 
 #include "bld_core.h"
 
+#define XXH_INLINE_ALL
+#include "xxhash.h"
+
 /* ================================================================
  *  Arena
  * ================================================================ */
@@ -320,10 +323,8 @@ void bld_log_info(const char* fmt, ...) {
  * ================================================================ */
 
 Bld_Hash bld_hash_combine(Bld_Hash a, Bld_Hash b) {
-    uint64_t h = 14695981039346656037ULL;
-    h ^= a.value; h *= 1099511628211ULL;
-    h ^= b.value; h *= 1099511628211ULL;
-    return (Bld_Hash){h};
+    uint64_t buf[2] = {a.value, b.value};
+    return (Bld_Hash){XXH3_64bits(buf, sizeof(buf))};
 }
 
 Bld_Hash bld_hash_combine_unordered(Bld_Hash a, Bld_Hash b) {
@@ -331,31 +332,13 @@ Bld_Hash bld_hash_combine_unordered(Bld_Hash a, Bld_Hash b) {
 }
 
 Bld_Hash bld_hash_str(const char* s) {
-    Bld_Hash h = {0};
-    for (; *s; s++)
-        h = bld_hash_combine(h, (Bld_Hash){(uint64_t)(unsigned char)*s});
-    return h;
+    return (Bld_Hash){XXH3_64bits(s, strlen(s))};
 }
 
 Bld_Hash bld_hash_file(Bld_Path p) {
-    FILE* f = fopen(p.s, "rb");
-    if (!f) bld_panic("hash_file: open %s: %s\n", p.s, strerror(errno));
-    Bld_Hash h = {0};
-    uint8_t buf[32 * 1024];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-        size_t i = 0;
-        uint64_t batch;
-        for (; i + sizeof(uint64_t) <= n; i += sizeof(uint64_t)) {
-            memcpy(&batch, buf + i, sizeof(uint64_t));
-            h = bld_hash_combine(h, (Bld_Hash){batch});
-        }
-        for (; i < n; i++)
-            h = bld_hash_combine(h, (Bld_Hash){(uint64_t)buf[i]});
-    }
-    if (ferror(f)) bld_panic("hash_file: read %s: %s\n", p.s, strerror(errno));
-    fclose(f);
-    return h;
+    size_t len;
+    const char* data = bld_fs_read_file(p, &len);
+    return (Bld_Hash){XXH3_64bits(data, len)};
 }
 
 Bld_Hash bld_hash_dir(Bld_Path dir) {
