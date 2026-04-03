@@ -3,22 +3,32 @@
 
 #include "bld_exec.c"
 
+#ifdef __APPLE__
+  #define BLD__HOST_OS BLD_OS_MACOS
+#elif defined(__FreeBSD__)
+  #define BLD__HOST_OS BLD_OS_FREEBSD
+#elif defined(_WIN32)
+  #define BLD__HOST_OS BLD_OS_WINDOWS
+#else
+  #define BLD__HOST_OS BLD_OS_LINUX
+#endif
+
 /* ---- CLI parsing ---- */
 
 static void bld__parse_args(Bld* b) {
     Bld_Settings* s = &b->settings;
-    Bld_Strings targets = {0};
-    Bld_Strings passthrough = {0};
-    int after_dd = 0;
+    Bld_Strs targets = {0};
+    Bld_Strs passthrough = {0};
+    bool after_dd = false;
     for (int i = 1; i < b->argc; i++) {
         const char* a = b->argv[i];
-        if (after_dd) { bld_da_push(&passthrough, a); continue; }
-        if (strcmp(a, "--") == 0) { after_dd = 1; continue; }
-        if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0 || strcmp(a, "help") == 0) { s->show_help = 1; continue; }
-        if (strcmp(a, "-v") == 0 || strcmp(a, "--verbose") == 0) { s->verbose = 1; continue; }
-        if (strcmp(a, "-s") == 0 || strcmp(a, "--silent") == 0) { s->silent = 1; continue; }
-        if (strcmp(a, "--show-cached") == 0) { s->show_cached = 1; continue; }
-        if (strcmp(a, "-k") == 0 || strcmp(a, "--keep-going") == 0) { s->keep_going = 1; continue; }
+        if (after_dd) { bld_strs_push(&passthrough, a); continue; }
+        if (strcmp(a, "--") == 0) { after_dd = true; continue; }
+        if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0 || strcmp(a, "help") == 0) { s->show_help = true; continue; }
+        if (strcmp(a, "-v") == 0 || strcmp(a, "--verbose") == 0) { s->verbose = true; continue; }
+        if (strcmp(a, "-s") == 0 || strcmp(a, "--silent") == 0) { s->silent = true; continue; }
+        if (strcmp(a, "--show-cached") == 0) { s->show_cached = true; continue; }
+        if (strcmp(a, "-k") == 0 || strcmp(a, "--keep-going") == 0) { s->keep_going = true; continue; }
         if (strcmp(a, "--debug") == 0) { s->mode = BLD_MODE_DEBUG; continue; }
         if (strcmp(a, "--release") == 0) { s->mode = BLD_MODE_RELEASE; continue; }
         if (strcmp(a, "--prefix") == 0) {
@@ -48,14 +58,12 @@ static void bld__parse_args(Bld* b) {
             bld_da_push(&b->user_options, entry);
             continue;
         }
-        bld_da_push(&targets, a);
+        bld_strs_push(&targets, a);
     }
-    bld_da_push(&passthrough, (const char*)NULL);
-    s->passthrough = passthrough.items;
-    bld_da_push(&targets, (const char*)NULL);
-    s->targets = targets.items;
+    s->passthrough = passthrough;
+    s->targets = targets;
     if (s->max_jobs <= 0) { long n = sysconf(_SC_NPROCESSORS_ONLN); s->max_jobs = n > 0 ? (int)n : 1; }
-    if (!s->targets[0]) s->show_help = 1;
+    if (s->targets.len == 0) s->show_help = true;
 }
 
 /* ---- Help ---- */
@@ -80,6 +88,7 @@ static void bld__show_help(Bld* b) {
     bld_log("  %s-j <N>%s           Parallel jobs\n\n", G, R);
 
     bld_log("%sBuilt-in:%s\n", Y, R);
+    bld_log("  %s%-20s%s %s\n", G, "build", R, "Build and install all targets");
     bld_log("  %s%-20s%s %s\n", G, "clean", R, "Remove cache and build directories");
     bld_log("  %s%-20s%s %s\n", G, "test", R, "Run all registered tests");
 
@@ -114,8 +123,8 @@ static void bld__show_help(Bld* b) {
 }
 
 static int bld__handle_clean(Bld* b) {
-    for (const char** rq = b->settings.targets; rq && *rq; rq++) {
-        if (strcmp(*rq, "clean") == 0) {
+    for (size_t i = 0; i < b->settings.targets.len; i++) {
+        if (strcmp(b->settings.targets.items[i], "clean") == 0) {
             bld_log_info("[*] Cleaning %s and %s...\n", b->cache.s, b->out.s);
             bld_fs_remove_all(b->cache);
             bld_fs_remove_all(b->out);
@@ -130,9 +139,9 @@ static int bld__handle_clean(Bld* b) {
 
 static int bld__handle_test(Bld* b) {
     /* check if "test" is among requested targets */
-    int want_test = 0;
-    for (const char** rq = b->settings.targets; rq && *rq; rq++)
-        if (strcmp(*rq, "test") == 0) { want_test = 1; break; }
+    bool want_test = false;
+    for (size_t i = 0; i < b->settings.targets.len; i++)
+        if (strcmp(b->settings.targets.items[i], "test") == 0) { want_test = true; break; }
     if (!want_test) return 0;
     if (b->tests.count == 0) { bld_log("no tests registered\n"); return 1; }
 
@@ -172,7 +181,7 @@ static int bld__handle_test(Bld* b) {
         if (te->working_dir && te->working_dir[0])
             bld_cmd_appendf(&cmd, "cd \"%s\" && ", te->working_dir);
         bld_cmd_appendf(&cmd, "\"%s\"", exe_path.s);
-        if (te->args) for (const char** a = te->args; *a; a++) bld_cmd_appendf(&cmd, " \"%s\"", *a);
+        for (size_t ai = 0; ai < te->args.len; ai++) bld_cmd_appendf(&cmd, " \"%s\"", te->args.items[ai]);
         bld_cmd_appendf(&cmd, " > \"%s\" 2>&1", log_path.s);
 
         struct timespec st0;
@@ -261,25 +270,39 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
     bld_fs_write_file(bld_path_join(b->cache, bld_path(".gitignore")), "*", 1);
     bld_fs_write_file(bld_path_join(b->out, bld_path(".gitignore")), "*", 1);
 
-    /* C compiler */
+    /* Detect compilers from environment */
     const char *cc_env = getenv("CC"), *cc = cc_env ? cc_env : "cc";
     if (!bld__has_in_path(cc) && !cc_env)
         bld_panic("C compiler '%s' not found in PATH\n", cc);
-    b->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
-                                      .identity_hash = bld__make_identity_hash(cc), .available = 1};
-    /* C++ compiler */
     const char *cxx_env = getenv("CXX"), *cxx = cxx_env ? cxx_env : "c++";
-    b->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cxx,
+    const char *as_env = getenv("AS"), *as_drv = as_env ? as_env : cc;
+
+    /* Detect target OS from compiler triple */
+    const char* dumpmachine_cmd = bld_str_fmt("%s -dumpmachine 2>/dev/null", cc);
+    FILE* dm = popen(dumpmachine_cmd, "r");
+    Bld_OsTarget target_os;
+    if (dm) {
+        char triple[256] = {0};
+        if (fgets(triple, sizeof(triple), dm)) {
+            size_t n = strlen(triple);
+            if (n > 0 && triple[n-1] == '\n') triple[n-1] = '\0';
+        }
+        pclose(dm);
+        target_os = triple[0] ? bld__detect_os_from_triple(triple) : BLD__HOST_OS;
+    } else {
+        target_os = BLD__HOST_OS;
+    }
+
+    /* Create toolchain with detected tools */
+    b->toolchain = bld_toolchain_gcc(target_os);
+    b->toolchain->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
+                                      .identity_hash = bld__make_identity_hash(cc), .available = true};
+    b->toolchain->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cxx,
                                       .identity_hash = bld__make_identity_hash(cxx),
                                       .available = bld__has_in_path(cxx) || cxx_env != NULL};
-    /* ASM assembler (falls back to C compiler) */
-    const char *as_env = getenv("AS"), *as_drv = as_env ? as_env : cc;
-    b->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
-                                      .identity_hash = bld__make_identity_hash(as_drv), .available = 1};
-
-    if (bld__has_in_path("llvm-ar")) b->static_link_tool = "llvm-ar";
-    else if (bld__has_in_path("ar")) b->static_link_tool = "ar";
-    b->global_warnings = 1;
+    b->toolchain->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
+                                      .identity_hash = bld__make_identity_hash(as_drv), .available = true};
+    b->global_warnings = true;
 }
 
 /* stage 2: CLI parsing + prefix override */
@@ -291,14 +314,11 @@ static void bld__init_cli(Bld* b) {
     }
 }
 
-/* stage 3: built-in targets (install, build) */
+/* stage 3: built-in default target */
 static void bld__init_builtin_targets(Bld* b) {
-    b->install_target = bld_arena_alloc(sizeof(Bld_Target));
-    bld__init_target(b, b->install_target, BLD_TGT_CUSTOM, "install", "Install targets");
-    b->install_target->exit->silent = 1;
-    b->build_all_target = bld_arena_alloc(sizeof(Bld_Target));
-    bld__init_target(b, b->build_all_target, BLD_TGT_CUSTOM, "build", "Build all targets");
-    b->build_all_target->exit->silent = 1;
+    b->target_default = bld_arena_alloc(sizeof(Bld_Target));
+    bld__init_target(b, b->target_default, BLD_TGT_CUSTOM, "build", "Build and install all targets");
+    b->target_default->exit->silent = true;
 }
 
 /* full init for main() */
@@ -320,7 +340,7 @@ static void bld__escape_json(Bld_Cmd* out, const char* s) {
 static void bld__write_compdb(Bld* b) {
     Bld_Cmd json = {0};
     bld_cmd_appendf(&json, "[\n");
-    int first = 1;
+    bool first = true;
 
     for (size_t i = 0; i < b->all_targets.count; i++) {
         Bld_Target* t = b->all_targets.items[i];
@@ -339,7 +359,7 @@ static void bld__write_compdb(Bld* b) {
             bld__render_obj_cmd(&cmd, ctx);
 
             if (!first) bld_cmd_appendf(&json, ",\n");
-            first = 0;
+            first = false;
 
             bld_cmd_appendf(&json, "  { \"directory\": \"");
             bld__escape_json(&json, b->root.s);

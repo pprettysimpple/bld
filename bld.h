@@ -39,6 +39,10 @@
 #define LibOpts     Bld_LibOpts
 #define RunOpts     Bld_RunOpts
 #define StepOpts    Bld_StepOpts
+#define CmdOpts     Bld_CmdOpts
+#define Strs        Bld_Strs
+#define Paths       Bld_Paths
+#define BuildFlags  Bld_BuildFlags
 #define CompileFlags Bld_CompileFlags
 #define LinkFlags   Bld_LinkFlags
 #define Optimize    Bld_Optimize
@@ -47,6 +51,13 @@
 #define CxxStd      Bld_CxxStd
 #define Compiler    Bld_Compiler
 #define Toggle      Bld_Toggle
+#define OsTarget    Bld_OsTarget
+#define Tool        Bld_Tool
+#define Toolchain   Bld_Toolchain
+#define OS_LINUX    BLD_OS_LINUX
+#define OS_MACOS    BLD_OS_MACOS
+#define OS_WINDOWS  BLD_OS_WINDOWS
+#define OS_FREEBSD  BLD_OS_FREEBSD
 #define ActionFn    Bld_ActionFn
 #define HashFn       Bld_HashFn
 #define TargetKind  Bld_TargetKind
@@ -91,7 +102,9 @@
 #define TGT_LIB    BLD_TGT_LIB
 #define TGT_CUSTOM BLD_TGT_CUSTOM
 
-/* macros — not stripped: DA, PATHS, DEFS, path() are too generic */
+/* macros */
+#define STRS(...)  BLD_STRS(__VA_ARGS__)
+#define PATHS(...) BLD_PATHS(__VA_ARGS__)
 
 /* arena */
 #define arena_get     bld_arena_get
@@ -104,6 +117,10 @@
 #define str_cat    bld_str_cat
 #define str_lines  bld_str_lines
 #define str_join   bld_str_join
+#define strs_push    bld_strs_push
+#define paths_push   bld_paths_push
+#define strs_merge   bld_strs_merge
+#define paths_merge  bld_paths_merge
 
 /* path — not stripped: path/path_join etc. are too generic */
 
@@ -139,6 +156,9 @@
 #define hash_file              bld_hash_file
 #define hash_dir               bld_hash_dir
 
+/* toolchain */
+#define toolchain_gcc  bld_toolchain_gcc
+
 /* compiler setters */
 #define set_compiler_c(b, ...)   bld_set_compiler_c((b), __VA_ARGS__)
 #define set_compiler_cxx(b, ...) bld_set_compiler_cxx((b), __VA_ARGS__)
@@ -148,6 +168,7 @@
 #define add_exe(b, ...)          bld_add_exe((b), __VA_ARGS__)
 #define add_lib(b, ...)          bld_add_lib((b), __VA_ARGS__)
 #define add_step(b, ...)         bld_add_step((b), __VA_ARGS__)
+#define add_cmd(b, ...)          bld_add_cmd((b), __VA_ARGS__)
 #define add_run(b, t, ...)       bld_add_run((b), (t), __VA_ARGS__)
 #define depends_on               bld_depends_on
 #define link_with                bld_link_with
@@ -158,13 +179,14 @@
 #define install_exe              bld_install_exe
 #define install_lib              bld_install_lib
 #define install_target           bld_install
+#define install_files            bld_install_files
+#define install_dir              bld_install_dir
 #define add_test(b, t, ...)      bld_add_test((b), (t), __VA_ARGS__)
 #define use_dep                  bld_use_dep
 #define override_file(t, f, ...) bld_override_file((t), (f), __VA_ARGS__)
 #define find_pkg                 bld_find_pkg
 #define clone_compile_flags      bld_clone_compile_flags
 #define default_compile_flags    bld_default_compile_flags
-#define default_link_flags       bld_default_link_flags
 #define option_bool              bld_option_bool
 #define option_str               bld_option_str
 #define target_ok                bld_target_ok

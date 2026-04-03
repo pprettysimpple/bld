@@ -11,6 +11,7 @@ setup_workdir() {
     trap 'rm -rf "$WORKDIR"' EXIT
     cp "$TEST_DIR/build.c" "$WORKDIR/"
     [ -d "$TEST_DIR/src" ] && cp -r "$TEST_DIR/src" "$WORKDIR/"
+    [ -d "$TEST_DIR/s" ] && cp -r "$TEST_DIR/s" "$WORKDIR/"
     ln -sf "$BLD_ROOT/bld.h" "$WORKDIR/bld.h"
     ln -sf "$BLD_ROOT/bld" "$WORKDIR/bld"
     cd "$WORKDIR"
@@ -22,7 +23,7 @@ bld_bootstrap() {
 
 bld_install() {
     BUILD_EXIT=0
-    BUILD_OUTPUT="$(./b install -j4 --prefix out "$@" 2>&1)" || BUILD_EXIT=$?
+    BUILD_OUTPUT="$(./b build -j4 --prefix out "$@" 2>&1)" || BUILD_EXIT=$?
 }
 
 die() {

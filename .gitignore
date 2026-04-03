@@ -4,3 +4,15 @@
 /.cache/
 compile_commands.json
 .claude/
+CLAUDE.md
+steal-docs
+tickets/
+local/
+out/
+result
+a.out
+*.json
+!flake.lock
+devrag.nix
+TODO.md
+examples/

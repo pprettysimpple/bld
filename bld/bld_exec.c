@@ -151,13 +151,13 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
         col[ri] = GRAY;
         while (stk.count > 0) {
             Fr* f = &stk.items[stk.count - 1];
-            int pushed = 0;
+            bool pushed = false;
             while (f->di < f->s->deps.count) {
                 Bld_Step* d = f->s->deps.items[f->di++];
                 size_t di = bld__step_idx(b, d);
                 if (col[di] == BLACK) continue;
                 if (col[di] == GRAY) bld_panic("cycle: %s -> %s\n", f->s->name, d->name);
-                col[di] = GRAY; bld_da_push(&stk, ((Fr){d, 0, 0})); pushed = 1; break;
+                col[di] = GRAY; bld_da_push(&stk, ((Fr){d, 0, 0})); pushed = true; break;
             }
             if (pushed) continue;
             while (f->ii < f->s->inputs.count) {
@@ -166,7 +166,7 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
                 size_t di = bld__step_idx(b, d);
                 if (col[di] == BLACK) continue;
                 if (col[di] == GRAY) bld_panic("cycle: %s -> %s\n", f->s->name, d->name);
-                col[di] = GRAY; bld_da_push(&stk, ((Fr){d, 0, 0})); pushed = 1; break;
+                col[di] = GRAY; bld_da_push(&stk, ((Fr){d, 0, 0})); pushed = true; break;
             }
             if (pushed) continue;
             col[bld__step_idx(b, f->s)] = BLACK;
@@ -188,12 +188,12 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
     /* pre-pass: resolve cached, count dirty */
     for (size_t i = 0; i < order.count; i++) {
         Bld_Step* step = order.items[i];
-        int any_dep_dirty = 0;
+        bool any_dep_dirty = false;
         for (size_t j = 0; j < step->deps.count; j++)
-            if (!bld__step_is_done(step->deps.items[j])) { any_dep_dirty = 1; break; }
+            if (!bld__step_is_done(step->deps.items[j])) { any_dep_dirty = true; break; }
         if (!any_dep_dirty)
             for (size_t j = 0; j < step->inputs.count; j++)
-                if (step->inputs.items[j] && !bld__step_is_done(step->inputs.items[j])) { any_dep_dirty = 1; break; }
+                if (step->inputs.items[j] && !bld__step_is_done(step->inputs.items[j])) { any_dep_dirty = true; break; }
         if (any_dep_dirty) {
             if (step->action) b->progress_total++;
             continue;
@@ -231,15 +231,16 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
 static void bld__run_build(Bld* b) {
     /* resolve requested targets */
     Bld_StepList to_build = {0};
-    for (const char** rq = b->settings.targets; rq && *rq; rq++) {
-        int found = 0;
+    for (size_t ri = 0; ri < b->settings.targets.len; ri++) {
+        const char* rq = b->settings.targets.items[ri];
+        bool found = false;
         for (size_t i = 0; i < b->all_targets.count; i++) {
-            if (strcmp(b->all_targets.items[i]->name, *rq) == 0) {
+            if (strcmp(b->all_targets.items[i]->name, rq) == 0) {
                 bld_da_push(&to_build, b->all_targets.items[i]->exit);
-                found = 1;
+                found = true;
             }
         }
-        if (!found) bld_panic("unknown target: %s\n", *rq);
+        if (!found) bld_panic("unknown target: %s\n", rq);
     }
 
     bld__check_missing_deps(b);

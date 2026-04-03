@@ -10,9 +10,10 @@ Single-header build system for C. Spiritual successor of [buildpp](https://githu
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
 void configure(Bld* b) {
+    bld_set_compiler_c(b, .standard = BLD_C_11);
+
     Target* exe = add_exe(b, .name = "myapp",
-        .sources = BLD_PATHS("main.c"),
-        .compile = (CompileFlags){.standard = STD_C11});
+        .sources = BLD_PATHS("main.c"));
 }
 ```
 

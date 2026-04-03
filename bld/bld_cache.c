@@ -122,7 +122,7 @@ int bld__cache_has(Bld* b, Bld_Step* step) {
             h = bld_hash_combine(h, bld__hash_depfile(dep));
     }
     step->cache_key = h;
-    step->hash_valid = 1;
+    step->hash_valid = true;
 
     if (!step->action) return 1;
     if (step->phony) return 0;

@@ -115,33 +115,33 @@ const char* bld_str_cat(const char* first, ...) {
     return buf;
 }
 
-Bld_Strings bld_str_lines(const char* s) {
-    Bld_Strings lines = {0};
+Bld_Strs bld_str_lines(const char* s) {
+    Bld_Strs lines = {0};
     while (*s) {
         const char* nl = strchr(s, '\n');
         size_t n = nl ? (size_t)(nl - s) : strlen(s);
         char* line = bld_arena_alloc(n + 1);
         memcpy(line, s, n);
         line[n] = '\0';
-        bld_da_push(&lines, (const char*)line);
+        bld_strs_push(&lines, (const char*)line);
         s += n + (nl ? 1 : 0);
     }
     return lines;
 }
 
-const char* bld_str_join(const Bld_Strings* parts, const char* sep) {
-    if (!parts->count) return "";
+const char* bld_str_join(const Bld_Strs* parts, const char* sep) {
+    if (!parts->len) return "";
     size_t sep_len = strlen(sep);
     /* compute lengths in one pass */
-    size_t* lens = bld_arena_alloc(parts->count * sizeof(size_t));
+    size_t* lens = bld_arena_alloc(parts->len * sizeof(size_t));
     size_t total = 0;
-    for (size_t i = 0; i < parts->count; i++) {
+    for (size_t i = 0; i < parts->len; i++) {
         lens[i] = strlen(parts->items[i]);
         total += lens[i] + (i > 0 ? sep_len : 0);
     }
     char* buf = bld_arena_alloc(total + 1);
     size_t off = 0;
-    for (size_t i = 0; i < parts->count; i++) {
+    for (size_t i = 0; i < parts->len; i++) {
         if (i > 0) { memcpy(buf + off, sep, sep_len); off += sep_len; }
         memcpy(buf + off, parts->items[i], lens[i]);
         off += lens[i];
@@ -422,17 +422,17 @@ Bld_Hash bld_hash_dir(Bld_Path dir) {
  *  Filesystem
  * ================================================================ */
 
-int bld_fs_exists(Bld_Path p) {
+bool bld_fs_exists(Bld_Path p) {
     struct stat st;
     return stat(p.s, &st) == 0;
 }
 
-int bld_fs_is_dir(Bld_Path p) {
+bool bld_fs_is_dir(Bld_Path p) {
     struct stat st;
     return stat(p.s, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-int bld_fs_is_file(Bld_Path p) {
+bool bld_fs_is_file(Bld_Path p) {
     struct stat st;
     return stat(p.s, &st) == 0 && S_ISREG(st.st_mode);
 }
@@ -597,15 +597,81 @@ static int bld__strcmp_indirect(const void* a, const void* b) {
     return strcmp(*(const char**)a, *(const char**)b);
 }
 
-const char** bld_files_glob(const char* pattern) {
+/* ---- Bld_Strs / Bld_Paths literal constructors ---- */
+
+Bld_Strs bld__strs_lit(const char** items, size_t len) {
+    const char** copy = bld_arena_alloc(len * sizeof(const char*));
+    memcpy(copy, items, len * sizeof(const char*));
+    return (Bld_Strs){copy, len, len};
+}
+
+Bld_Paths bld__paths_lit(const char** items, size_t len) {
+    const char** copy = bld_arena_alloc(len * sizeof(const char*));
+    memcpy(copy, items, len * sizeof(const char*));
+    return (Bld_Paths){copy, len, len};
+}
+
+/* ---- Bld_Strs / Bld_Paths push & merge ---- */
+
+void bld_strs_push(Bld_Strs* s, const char* item) {
+    if (s->len >= s->cap) {
+        size_t new_cap = s->cap ? s->cap * 2 : 8;
+        if (s->cap == 0 && s->items && s->len > 0) {
+            /* first dynamic use of a static slice — copy from compound literal */
+            const char** old = s->items;
+            s->items = bld_arena_alloc(new_cap * sizeof(const char*));
+            memcpy(s->items, old, s->len * sizeof(const char*));
+        } else {
+            s->items = bld_arena_realloc(
+                s->items, s->cap * sizeof(const char*), new_cap * sizeof(const char*));
+        }
+        s->cap = new_cap;
+    }
+    s->items[s->len++] = item;
+}
+
+void bld_paths_push(Bld_Paths* s, const char* item) {
+    if (s->len >= s->cap) {
+        size_t new_cap = s->cap ? s->cap * 2 : 8;
+        if (s->cap == 0 && s->items && s->len > 0) {
+            const char** old = s->items;
+            s->items = bld_arena_alloc(new_cap * sizeof(const char*));
+            memcpy(s->items, old, s->len * sizeof(const char*));
+        } else {
+            s->items = bld_arena_realloc(
+                s->items, s->cap * sizeof(const char*), new_cap * sizeof(const char*));
+        }
+        s->cap = new_cap;
+    }
+    s->items[s->len++] = item;
+}
+
+Bld_Strs bld_strs_merge(Bld_Strs a, Bld_Strs b) {
+    size_t total = a.len + b.len;
+    if (total == 0) return (Bld_Strs){0};
+    const char** r = bld_arena_alloc(total * sizeof(const char*));
+    for (size_t i = 0; i < a.len; i++) r[i] = a.items[i];
+    for (size_t i = 0; i < b.len; i++) r[a.len + i] = b.items[i];
+    return (Bld_Strs){r, total, total};
+}
+
+Bld_Paths bld_paths_merge(Bld_Paths a, Bld_Paths b) {
+    size_t total = a.len + b.len;
+    if (total == 0) return (Bld_Paths){0};
+    const char** r = bld_arena_alloc(total * sizeof(const char*));
+    for (size_t i = 0; i < a.len; i++) r[i] = a.items[i];
+    for (size_t i = 0; i < b.len; i++) r[a.len + i] = b.items[i];
+    return (Bld_Paths){r, total, total};
+}
+
+Bld_Paths bld_files_glob(const char* pattern) {
     /* find first wildcard */
     const char* wild = strpbrk(pattern, "*?[");
     if (!wild) {
         /* no wildcards — return single file if it exists */
-        const char** r = bld_arena_alloc(2 * sizeof(const char*));
+        const char** r = bld_arena_alloc(1 * sizeof(const char*));
         r[0] = bld_str_dup(pattern);
-        r[1] = NULL;
-        return r;
+        return (Bld_Paths){r, 1, 0};
     }
 
     /* split into base dir + file pattern at last / before wildcard */
@@ -633,14 +699,14 @@ const char** bld_files_glob(const char* pattern) {
     if (recursive && strncmp(match_pat, "**/", 3) == 0)
         match_pat = match_pat + 3;
 
-    Bld_Strings result = {0};
+    Bld_Paths result = {0};
 
     if (recursive) {
         Bld_PathList files = bld_fs_list_files_r(bld_path(base_dir));
         for (size_t i = 0; i < files.count; i++) {
             const char* fname = bld_path_filename(files.items[i]);
             if (fnmatch(match_pat, fname, 0) == 0)
-                bld_da_push(&result, files.items[i].s);
+                bld_paths_push(&result, files.items[i].s);
         }
     } else {
         DIR* d = opendir(base_dir);
@@ -654,50 +720,52 @@ const char** bld_files_glob(const char* pattern) {
                 const char* path = (strcmp(base_dir, ".") == 0)
                     ? bld_str_dup(ent->d_name)
                     : bld_str_fmt("%s/%s", base_dir, ent->d_name);
-                bld_da_push(&result, path);
+                bld_paths_push(&result, path);
             }
         }
         closedir(d);
     }
 
     /* sort for deterministic order across runs */
-    if (result.count > 1)
-        qsort(result.items, result.count, sizeof(const char*), bld__strcmp_indirect);
+    if (result.len > 1)
+        qsort(result.items, result.len, sizeof(const char*), bld__strcmp_indirect);
 
-    bld_da_push(&result, (const char*)NULL);
-    return result.items;
+    return result;
 }
 
-const char** bld_files_exclude(const char** files, const char** exclude) {
-    if (!files) return files;
-    Bld_Strings result = {0};
-    for (const char** f = files; *f; f++) {
-        int skip = 0;
-        if (exclude) {
-            for (const char** e = exclude; *e; e++) {
-                if (strcmp(*f, *e) == 0) { skip = 1; break; }
-            }
+Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
+    if (!files.items || files.len == 0) return files;
+    Bld_Paths result = {0};
+    for (size_t i = 0; i < files.len; i++) {
+        bool skip = false;
+        for (size_t j = 0; j < exclude.len; j++) {
+            if (strcmp(files.items[i], exclude.items[j]) == 0) { skip = true; break; }
         }
-        if (!skip) bld_da_push(&result, *f);
+        if (!skip) bld_paths_push(&result, files.items[i]);
     }
-    bld_da_push(&result, (const char*)NULL);
-    return result.items;
+    return result;
 }
 
-const char** bld_files_merge(const char** a, const char** b) {
-    size_t na = 0, nb = 0;
-    if (a) for (const char** p = a; *p; p++) na++;
-    if (b) for (const char** p = b; *p; p++) nb++;
-    const char** r = bld_arena_alloc((na + nb + 1) * sizeof(const char*));
-    for (size_t i = 0; i < na; i++) r[i] = a[i];
-    for (size_t i = 0; i < nb; i++) r[na + i] = b[i];
-    r[na + nb] = NULL;
-    return r;
+Bld_Paths bld_files_merge(Bld_Paths a, Bld_Paths b) {
+    return bld_paths_merge(a, b);
 }
 
 /* ================================================================
  *  Tool detection
  * ================================================================ */
+
+static int bld__has_in_path(const char* name) {
+    const char* path_env = getenv("PATH");
+    if (!path_env) return 0;
+    const char* p = path_env;
+    while (*p) {
+        const char* sep = strchr(p, ':');
+        size_t len = sep ? (size_t)(sep - p) : strlen(p);
+        if (bld_fs_is_file(bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name)))) return 1;
+        p += len + (sep ? 1 : 0);
+    }
+    return 0;
+}
 
 /* capture first line of "driver --version" output, return hash */
 static Bld_Hash bld__compiler_version_hash(const char* driver) {
@@ -722,16 +790,233 @@ static Bld_Hash bld__make_identity_hash(const char* driver) {
     return h;
 }
 
-static int bld__has_in_path(const char* name) {
-    const char* path_env = getenv("PATH");
-    if (!path_env) return 0;
-    const char* p = path_env;
-    while (*p) {
-        const char* sep = strchr(p, ':');
-        size_t len = sep ? (size_t)(sep - p) : strlen(p);
-        if (bld_fs_is_file(bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name)))) return 1;
-        p += len + (sep ? 1 : 0);
+static Bld_OsTarget bld__detect_os_from_triple(const char* triple) {
+    if (strstr(triple, "darwin")) return BLD_OS_MACOS;
+    if (strstr(triple, "mingw") || strstr(triple, "windows")) return BLD_OS_WINDOWS;
+    if (strstr(triple, "freebsd")) return BLD_OS_FREEBSD;
+    return BLD_OS_LINUX;
+}
+
+/* ================================================================
+ *  Flag resolution (shared by toolchain renderers and legacy path)
+ * ================================================================ */
+
+static const char* bld__resolve_optimize(Bld_Optimize o) {
+    switch (o) {
+        case BLD_OPT_DEFAULT: return "";
+        case BLD_OPT_O0: return "-O0"; case BLD_OPT_O1: return "-O1";
+        case BLD_OPT_O2: return "-O2"; case BLD_OPT_O3: return "-O3";
+        case BLD_OPT_Os: return "-Os"; case BLD_OPT_OFAST: return "-Ofast";
     }
-    return 0;
+    return "";
+}
+
+static const char* bld__resolve_c_standard(Bld_CStd s) {
+    switch (s) {
+        case BLD_C_DEFAULT: return "";
+        case BLD_C_90: return "-std=c90";
+        case BLD_C_99: return "-std=c99"; case BLD_C_11: return "-std=c11";
+        case BLD_C_17: return "-std=c17"; case BLD_C_23: return "-std=c23";
+        case BLD_C_GNU90: return "-std=gnu90"; case BLD_C_GNU99: return "-std=gnu99";
+        case BLD_C_GNU11: return "-std=gnu11"; case BLD_C_GNU17: return "-std=gnu17";
+        case BLD_C_GNU23: return "-std=gnu23";
+    }
+    return "";
+}
+
+static const char* bld__resolve_cxx_standard(Bld_CxxStd s) {
+    switch (s) {
+        case BLD_CXX_DEFAULT: return "";
+        case BLD_CXX_11: return "-std=c++11"; case BLD_CXX_14: return "-std=c++14";
+        case BLD_CXX_17: return "-std=c++17"; case BLD_CXX_20: return "-std=c++20";
+        case BLD_CXX_23: return "-std=c++23";
+        case BLD_CXX_GNU11: return "-std=gnu++11"; case BLD_CXX_GNU14: return "-std=gnu++14";
+        case BLD_CXX_GNU17: return "-std=gnu++17"; case BLD_CXX_GNU20: return "-std=gnu++20";
+        case BLD_CXX_GNU23: return "-std=gnu++23";
+    }
+    return "";
+}
+
+/* ================================================================
+ *  GCC toolchain factory
+ * ================================================================ */
+
+/*
+ * GCC render_compile: produces the FULL compile command including -c -o and -MMD -MF.
+ *
+ * Flag order:
+ *   driver, -O, -std=, -Wall/-w, extra_flags, -D defines, -I compile_flags dirs,
+ *   -isystem sys dirs, -g, -fsanitize=address, -flto,
+ *   -fPIC, extra_cflags (target include dirs + ext_dep flags),
+ *   "source" (quoted), -c -o output, -MMD -MF depfile
+ */
+static void bld__gcc_render_compile(Bld_Cmd* cmd, Bld_CompileCmd c) {
+    bld_cmd_appendf(cmd, "%s", c.driver);
+
+    /* optimization */
+    const char* os = bld__resolve_optimize(c.optimize);
+    if (os[0]) bld_cmd_appendf(cmd, " %s", os);
+
+    /* language standard */
+    const char* ss = "";
+    if (c.lang == BLD_LANG_C) ss = bld__resolve_c_standard(c.c_std);
+    else if (c.lang == BLD_LANG_CXX) ss = bld__resolve_cxx_standard(c.cxx_std);
+    if (ss[0]) bld_cmd_appendf(cmd, " %s", ss);
+
+    /* warnings */
+    if (!c.warnings) bld_cmd_appendf(cmd, " -w");
+    if (c.warnings) bld_cmd_appendf(cmd, " -Wall");
+
+    /* extra compile flags (from CompileFlags.extra_flags) */
+    if (c.extra_flags && c.extra_flags[0]) bld_cmd_appendf(cmd, " %s", c.extra_flags);
+
+    /* defines */
+    for (size_t i = 0; i < c.defines.len; i++) {
+        bld_cmd_appendf(cmd, " -D");
+        bld_cmd_append_sq(cmd, c.defines.items[i]);
+    }
+
+    /* include dirs from CompileFlags */
+    for (size_t i = 0; i < c.include_dirs.len; i++)
+        bld_cmd_appendf(cmd, " -I%s", c.include_dirs.items[i]);
+
+    /* system include dirs from CompileFlags */
+    for (size_t i = 0; i < c.sys_include_dirs.len; i++)
+        bld_cmd_appendf(cmd, " -isystem %s", c.sys_include_dirs.items[i]);
+
+    /* debug/sanitizer/lto */
+    if (c.debug_info) bld_cmd_appendf(cmd, " -g");
+    if (c.asan) bld_cmd_appendf(cmd, " -fsanitize=address");
+    if (c.lto) bld_cmd_appendf(cmd, " -flto");
+
+    /* PIC */
+    if (c.pic) bld_cmd_appendf(cmd, " -fPIC");
+
+    /* extra cflags (merged from ext_deps) — includes target include dirs (quoted),
+       ext_dep -I/-isystem/extra_cflags already flattened into this field */
+    if (c.extra_cflags && c.extra_cflags[0]) bld_cmd_appendf(cmd, " %s", c.extra_cflags);
+
+    /* source file (quoted) */
+    bld_cmd_appendf(cmd, " \"%s\"", c.source);
+
+    /* -c -o output */
+    bld_cmd_appendf(cmd, " -c -o %s", c.output);
+
+    /* dependency file */
+    if (c.depfile && c.depfile[0])
+        bld_cmd_appendf(cmd, " -MMD -MF %s", c.depfile);
+}
+
+/*
+ * GCC render_link: produces the FULL link command.
+ *
+ * For exe (shared==0):
+ *   driver, -g/-fsanitize/-flto, obj_paths (quoted), -L lib_dirs (quoted), -l lib_names,
+ *   -Wl,-rpath,<rpath> for each rpath, -o output, extra_ldflags
+ *
+ * For shared lib (shared==1):
+ *   driver, -g/-fsanitize/-flto, -shared, OS-dependent soname flag,
+ *   obj_paths (quoted), -o output, extra_ldflags
+ */
+static void bld__gcc_render_link(Bld_Cmd* cmd, Bld_LinkCmd c) {
+    bld_cmd_appendf(cmd, "%s", c.driver);
+
+    /* debug/sanitizer/lto */
+    if (c.debug_info) bld_cmd_appendf(cmd, " -g");
+    if (c.asan) bld_cmd_appendf(cmd, " -fsanitize=address");
+    if (c.lto) bld_cmd_appendf(cmd, " -flto");
+
+    if (c.shared) {
+        bld_cmd_appendf(cmd, " -shared");
+        if (c.soname && c.soname[0])
+            bld_cmd_appendf(cmd, " -Wl,-soname,%s", c.soname);
+
+        /* obj paths */
+        for (size_t i = 0; i < c.obj_paths.len; i++)
+            bld_cmd_appendf(cmd, " \"%s\"", c.obj_paths.items[i]);
+
+        bld_cmd_appendf(cmd, " -o %s", c.output);
+    } else {
+        /* obj paths */
+        for (size_t i = 0; i < c.obj_paths.len; i++)
+            bld_cmd_appendf(cmd, " \"%s\"", c.obj_paths.items[i]);
+
+        /* lib dirs */
+        for (size_t i = 0; i < c.lib_dirs.len; i++)
+            bld_cmd_appendf(cmd, " -L\"%s\"", c.lib_dirs.items[i]);
+
+        /* lib names */
+        for (size_t i = 0; i < c.lib_names.len; i++)
+            bld_cmd_appendf(cmd, " -l%s", c.lib_names.items[i]);
+
+        /* rpaths */
+        for (size_t i = 0; i < c.rpaths.len; i++)
+            bld_cmd_appendf(cmd, " -Wl,-rpath,%s", c.rpaths.items[i]);
+
+        bld_cmd_appendf(cmd, " -o %s", c.output);
+    }
+
+    /* extra link flags */
+    if (c.extra_ldflags && c.extra_ldflags[0])
+        bld_cmd_appendf(cmd, " %s", c.extra_ldflags);
+}
+
+/*
+ * GCC render_archive: produces "tool rcs output obj1 obj2 ..."
+ */
+static void bld__gcc_render_archive(Bld_Cmd* cmd, const char* tool, const char* output, Bld_Paths obj_paths) {
+    bld_cmd_appendf(cmd, "%s rcs %s", tool, output);
+    for (size_t i = 0; i < obj_paths.len; i++)
+        bld_cmd_appendf(cmd, " \"%s\"", obj_paths.items[i]);
+}
+
+Bld_Toolchain* bld_toolchain_gcc(Bld_OsTarget os) {
+    Bld_Toolchain* tc = bld_arena_alloc(sizeof(Bld_Toolchain));
+    memset(tc, 0, sizeof(*tc));
+    tc->name = "gcc";
+    tc->os = os;
+
+    /* extensions by OS */
+    tc->obj_ext = "o";
+    tc->static_lib_prefix = "lib";
+    tc->static_lib_ext = "a";
+
+    switch (os) {
+        case BLD_OS_WINDOWS:
+            tc->exe_ext = ".exe";
+            tc->shared_lib_prefix = "";
+            tc->shared_lib_ext = "dll";
+            break;
+        case BLD_OS_MACOS:
+            tc->exe_ext = "";
+            tc->shared_lib_prefix = "lib";
+            tc->shared_lib_ext = "dylib";
+            break;
+        case BLD_OS_FREEBSD:
+        case BLD_OS_LINUX:
+        default:
+            tc->exe_ext = "";
+            tc->shared_lib_prefix = "lib";
+            tc->shared_lib_ext = "so";
+            break;
+    }
+
+    /* detect archiver */
+    if (bld__has_in_path("llvm-ar")) {
+        tc->archiver.driver = "llvm-ar";
+        tc->archiver.identity_hash = bld__make_identity_hash("llvm-ar");
+        tc->archiver.available = true;
+    } else if (bld__has_in_path("ar")) {
+        tc->archiver.driver = "ar";
+        tc->archiver.identity_hash = bld__make_identity_hash("ar");
+        tc->archiver.available = true;
+    }
+
+    /* render functions */
+    tc->render_compile = bld__gcc_render_compile;
+    tc->render_link    = bld__gcc_render_link;
+    tc->render_archive = bld__gcc_render_archive;
+
+    return tc;
 }
 

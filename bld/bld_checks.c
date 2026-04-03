@@ -7,7 +7,7 @@
 typedef struct {
     const char*  define_name;
     const char*  snippet;
-    int          is_sizeof;
+    bool         is_sizeof;
     bool*        bool_result;
     int*         int_result;
     Bld_Target*  target;
@@ -21,7 +21,7 @@ struct Bld_Checks {
     size_t      cap;
 };
 
-typedef struct { Bld* b; const char* snippet; int is_sizeof; } Bld__CheckCtx;
+typedef struct { Bld* b; const char* snippet; bool is_sizeof; } Bld__CheckCtx;
 
 static Bld_Hash bld__check_recipe_hash(void* ctx, Bld_Hash h) {
     Bld__CheckCtx* c = ctx;
@@ -41,31 +41,55 @@ static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path d
     bld_fs_mkdir_p(bld_path_parent(src));
     bld_fs_write_file(src, c->snippet, strlen(c->snippet));
 
+    /* compile snippet via toolchain (same compiler/flags as real builds) */
+    Bld_Path tmp_obj = bld__cache_tmp(c->b);
+    Bld_CompileCmd cc_cmd = {
+        .driver = cc,
+        .lang = BLD_LANG_C,
+        .source = src.s,
+        .output = tmp_obj.s,
+        .depfile = (!c->is_sizeof && depfile.s && depfile.s[0]) ? depfile.s : "",
+    };
+    Bld_Cmd cmd = {0};
+    if (c->b->toolchain)
+        c->b->toolchain->render_compile(&cmd, cc_cmd);
+    else
+        bld_cmd_appendf(&cmd, "%s -xc %s -c -o %s 2>/dev/null", cc, src.s, tmp_obj.s);
+    /* suppress errors */
+    bld_cmd_appendf(&cmd, " 2>/dev/null");
+    int rc = system(cmd.items);
+
     if (!c->is_sizeof) {
-        const char* cmd = bld_str_fmt("%s -xc %s -c -o /dev/null -MMD -MF %s 2>/dev/null",
-                                       cc, src.s,
-                                       depfile.s && depfile.s[0] ? depfile.s : "/dev/null");
-        int rc = system(cmd);
         bld_fs_write_file(output, rc == 0 ? "1" : "0", 1);
     } else {
-        Bld_Path bin = bld__cache_tmp(c->b);
-        const char* cmd = bld_str_fmt("%s -xc %s -o %s 2>/dev/null && %s",
-                                       cc, src.s, bin.s, bin.s);
-        FILE* f = popen(cmd, "r");
-        char buf[64] = {0};
-        if (f) {
-            size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-            buf[n] = '\0';
-            pclose(f);
+        if (rc != 0) {
+            bld_fs_write_file(output, "0", 1);
+        } else {
+            /* scan .o for marker */
+            static const char marker[] = "bld_check_entry:qWkPxLmNvRtBjHsYcFgDzAeUoIiXpK:sizeof:";
+            size_t marker_len = sizeof(marker) - 1;
+            size_t obj_len;
+            const char* obj = bld_fs_read_file(tmp_obj, &obj_len);
+            const char* found = NULL;
+            for (size_t i = 0; i + marker_len + 5 <= obj_len; i++) {
+                if (memcmp(obj + i, marker, marker_len) == 0) { found = obj + i + marker_len; break; }
+            }
+            if (found) {
+                int val = 0;
+                for (int d = 0; d < 5; d++) val = val * 10 + (found[d] - '0');
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%d", val);
+                bld_fs_write_file(output, buf, strlen(buf));
+            } else {
+                bld_fs_write_file(output, "0", 1);
+            }
         }
-        if (buf[0] == '\0') strcpy(buf, "0");
-        bld_fs_write_file(output, buf, strlen(buf));
     }
     return BLD_ACTION_OK;
 }
 
 static void bld__checks_add(Bld_Checks* c, const char* define_name, const char* snippet,
-                              int is_sizeof, bool* bool_result, int* int_result) {
+                              bool is_sizeof, bool* bool_result, int* int_result) {
     if (c->count >= c->cap) {
         size_t nc = c->cap ? c->cap * 2 : 16;
         c->items = bld_arena_realloc(c->items, c->cap * sizeof(Bld__Check), nc * sizeof(Bld__Check));
@@ -88,7 +112,7 @@ static void bld__checks_add(Bld_Checks* c, const char* define_name, const char* 
         .hash_fn = bld__check_recipe_hash,
         .hash_fn_ctx = ctx,
         .has_depfile = !is_sizeof,
-        .content_hash = 0,
+        .content_hash = false,
     });
 }
 
@@ -104,7 +128,7 @@ bool* bld_checks_header(Bld_Checks* c, const char* define_name, const char* head
     bool* result = bld_arena_alloc(sizeof(bool));
     *result = false;
     bld__checks_add(c, define_name,
-        bld_str_fmt("#include <%s>\nint main(){return 0;}\n", header), 0, result, NULL);
+        bld_str_fmt("#include <%s>\nint main(){return 0;}\n", header), false, result, NULL);
     return result;
 }
 
@@ -112,22 +136,35 @@ bool* bld_checks_func(Bld_Checks* c, const char* define_name, const char* func, 
     bool* result = bld_arena_alloc(sizeof(bool));
     *result = false;
     bld__checks_add(c, define_name,
-        bld_str_fmt("#include <%s>\nint main(){(void)%s;return 0;}\n", header, func), 0, result, NULL);
+        bld_str_fmt("#include <%s>\nint main(){(void)%s;return 0;}\n", header, func), false, result, NULL);
     return result;
 }
 
 int* bld_checks_sizeof(Bld_Checks* c, const char* define_name, const char* type) {
     int* result = bld_arena_alloc(sizeof(int));
     *result = 0;
-    bld__checks_add(c, define_name,
-        bld_str_fmt("#include <stdio.h>\nint main(){printf(\"%%zu\",sizeof(%s));return 0;}\n", type), 1, NULL, result);
+    bld__checks_add(c, define_name, bld_str_fmt(
+        "#include <stddef.h>\n#include <sys/types.h>\n#include <time.h>\n"
+        "#define BLD__V (sizeof(%s))\n"
+        "char bld__m[] = {\n"
+        "    'b','l','d','_','c','h','e','c','k','_','e','n','t','r','y',':',\n"
+        "    'q','W','k','P','x','L','m','N','v','R','t','B','j','H','s',\n"
+        "    'Y','c','F','g','D','z','A','e','U','o','I','i','X','p','K',\n"
+        "    ':','s','i','z','e','o','f',':',\n"
+        "    ('0'+((BLD__V/10000)%%10)),\n"
+        "    ('0'+((BLD__V/1000)%%10)),\n"
+        "    ('0'+((BLD__V/100)%%10)),\n"
+        "    ('0'+((BLD__V/10)%%10)),\n"
+        "    ('0'+(BLD__V%%10)),\n"
+        "    '\\0'\n"
+        "};\n", type), true, NULL, result);
     return result;
 }
 
 bool* bld_checks_compile(Bld_Checks* c, const char* define_name, const char* source) {
     bool* result = bld_arena_alloc(sizeof(bool));
     *result = false;
-    bld__checks_add(c, define_name, source, 0, result, NULL);
+    bld__checks_add(c, define_name, source, false, result, NULL);
     return result;
 }
 

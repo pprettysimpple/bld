@@ -81,11 +81,15 @@ Bld_Path    bld_path_replace_ext(Bld_Path p, const char* ext);
 Bld_Path    bld_path_fmt(const char* fmt, ...);
 
 typedef BLD_DA(Bld_Path)       Bld_PathList;
-typedef BLD_DA(const char*)    Bld_Strings;
 
-Bld_Strings bld_str_lines(const char* s);
-const char* bld_str_join(const Bld_Strings* parts, const char* sep);
-const char** bld_dup_strarray(const char** arr); /* deep-copy NULL-terminated string array */
+/* ===== Typed slices for user-facing API ===== */
+
+typedef struct { const char** items; size_t len, cap; } Bld_Strs;   /* defines, lib names */
+typedef struct { const char** items; size_t len, cap; } Bld_Paths;  /* source files, dir paths */
+
+Bld_Strs    bld_str_lines(const char* s);
+const char* bld_str_join(const Bld_Strs* parts, const char* sep);
+const char** bld_dup_strarray(const char** arr); /* deep-copy NULL-terminated string array (internal) */
 
 /* ===== Cmd — growable string buffer (arena-backed) ===== */
 
@@ -104,6 +108,22 @@ Bld_Hash bld_hash_str(const char* s);
 Bld_Hash bld_hash_file(Bld_Path p);
 Bld_Hash bld_hash_dir(Bld_Path dir);
 
+Bld_Strs  bld__strs_lit(const char** items, size_t len);
+Bld_Paths bld__paths_lit(const char** items, size_t len);
+
+#define BLD_STRS(...)  bld__strs_lit( \
+    (const char*[]){__VA_ARGS__}, \
+    sizeof((const char*[]){__VA_ARGS__}) / sizeof(const char*))
+
+#define BLD_PATHS(...) bld__paths_lit( \
+    (const char*[]){__VA_ARGS__}, \
+    sizeof((const char*[]){__VA_ARGS__}) / sizeof(const char*))
+
+void      bld_strs_push(Bld_Strs* s, const char* item);
+void      bld_paths_push(Bld_Paths* s, const char* item);
+Bld_Strs  bld_strs_merge(Bld_Strs a, Bld_Strs b);
+Bld_Paths bld_paths_merge(Bld_Paths a, Bld_Paths b);
+
 /* ===== Log ===== */
 
 void bld_log(const char* fmt, ...);
@@ -118,9 +138,9 @@ void bld_log_info(const char* fmt, ...);    /* [*] info messages */
 
 /* ===== Filesystem ===== */
 
-int      bld_fs_exists(Bld_Path p);
-int      bld_fs_is_dir(Bld_Path p);
-int      bld_fs_is_file(Bld_Path p);
+bool     bld_fs_exists(Bld_Path p);
+bool     bld_fs_is_dir(Bld_Path p);
+bool     bld_fs_is_file(Bld_Path p);
 void     bld_fs_mkdir_p(Bld_Path p);
 void     bld_fs_remove(Bld_Path p);
 void     bld_fs_remove_all(Bld_Path p);
@@ -135,12 +155,12 @@ Bld_PathList bld_fs_list_files_r(Bld_Path dir);
 const char* bld_fs_read_file(Bld_Path p, size_t* out_len);
 void        bld_fs_write_file(Bld_Path p, const char* data, size_t len);
 
-/* glob: returns NULL-terminated array of matching file paths */
-const char** bld_files_glob(const char* pattern);
-/* exclude paths from a NULL-terminated array, returns new array */
-const char** bld_files_exclude(const char** files, const char** exclude);
-/* merge two NULL-terminated arrays, returns new array */
-const char** bld_files_merge(const char** a, const char** b);
+/* glob: returns Bld_Paths with sized .items */
+Bld_Paths bld_files_glob(const char* pattern);
+/* exclude paths from a Bld_Paths, returns new Bld_Paths */
+Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude);
+/* merge two Bld_Paths, returns new Bld_Paths */
+Bld_Paths bld_files_merge(Bld_Paths a, Bld_Paths b);
 
 /* ===== Enums ===== */
 
@@ -169,7 +189,7 @@ typedef struct {
     Bld_Lang    lang;
     const char* driver;
     Bld_Hash    identity_hash;
-    int         available;
+    bool        available;
     union {
         struct { Bld_CStd standard; } c;
         struct { Bld_CxxStd standard; } cxx;
@@ -178,6 +198,78 @@ typedef struct {
 } Bld_Compiler;
 
 typedef enum { BLD_UNSET = 0, BLD_ON, BLD_OFF } Bld_Toggle;
+
+/* ===== Toolchain ===== */
+
+typedef enum {
+    BLD_OS_LINUX = 0, BLD_OS_MACOS, BLD_OS_WINDOWS, BLD_OS_FREEBSD,
+} Bld_OsTarget;
+
+typedef struct {
+    const char* driver;
+    Bld_Hash    identity_hash;
+    bool        available;
+} Bld_Tool;
+
+typedef struct {
+    const char*  driver;
+    Bld_Lang     lang;
+    Bld_CStd     c_std;
+    Bld_CxxStd   cxx_std;
+    Bld_Optimize optimize;
+    bool         warnings;
+    bool         pic;
+    bool         debug_info;
+    bool         asan;
+    bool         lto;
+    const char*  extra_flags;
+    Bld_Strs     defines;
+    Bld_Paths    include_dirs;
+    Bld_Paths    sys_include_dirs;
+    const char*  extra_cflags;
+    const char*  source;
+    const char*  output;
+    const char*  depfile;
+} Bld_CompileCmd;
+
+typedef struct {
+    const char*  driver;
+    bool         shared;
+    bool         debug_info;
+    bool         asan;
+    bool         lto;
+    const char*  soname;
+    Bld_Paths    obj_paths;
+    Bld_Paths    lib_dirs;
+    Bld_Strs     lib_names;
+    Bld_Paths    rpaths;
+    const char*  extra_ldflags;
+    const char*  output;
+} Bld_LinkCmd;
+
+typedef struct Bld_Toolchain Bld_Toolchain;
+struct Bld_Toolchain {
+    const char* name;
+    Bld_OsTarget os;
+
+    Bld_Compiler compilers[BLD_LANG__COUNT - 1];
+    Bld_Tool     archiver;
+
+    const char*  obj_ext;
+    const char*  exe_ext;
+    const char*  static_lib_prefix;
+    const char*  static_lib_ext;
+    const char*  shared_lib_prefix;
+    const char*  shared_lib_ext;
+
+    void (*render_compile)(Bld_Cmd* cmd, Bld_CompileCmd args);
+    void (*render_link)   (Bld_Cmd* cmd, Bld_LinkCmd args);
+    void (*render_archive)(Bld_Cmd* cmd, const char* tool, const char* output, Bld_Paths obj_paths);
+
+    void* user_data;
+};
+
+Bld_Toolchain* bld_toolchain_gcc(Bld_OsTarget os);
 
 /* ===== Step — low-level graph node ===== */
 
@@ -202,8 +294,8 @@ typedef BLD_DA(Bld_Target*) Bld_TargetList;
 
 struct Bld_Step {
     const char*  name;
-    int          silent;
-    int          phony;      /* always execute, never cache */
+    bool         silent;
+    bool         phony;      /* always execute, never cache */
 
     Bld_StepList deps;      /* ordering dependencies */
     Bld_StepList inputs;    /* data dependencies (step outputs used by action) */
@@ -213,13 +305,13 @@ struct Bld_Step {
     Bld_HashFn hash_fn;
     void*            hash_fn_ctx;
 
-    int has_depfile;
-    int content_hash;  /* use output content hash instead of recipe hash for downstream */
+    bool has_depfile;
+    bool content_hash;  /* use output content hash instead of recipe hash for downstream */
 
     /* computed at build time */
     Bld_Hash input_hash;
     Bld_Hash cache_key;
-    int           hash_valid;
+    bool          hash_valid;
     Bld_StepState state;
 
     pthread_mutex_t mutex;
@@ -237,31 +329,36 @@ typedef struct {
 
 typedef struct {
     const char*  name;                /* package name (for error messages) */
-    int          found;               /* 1 = found, 0 = not found */
-    const char** include_dirs;        /* -I, NULL-terminated */
-    const char** system_include_dirs; /* -isystem, NULL-terminated */
-    const char** libs;                /* -l names ("ssl", "crypto"), NULL-terminated */
-    const char** lib_dirs;            /* -L paths, NULL-terminated */
+    bool         found;
+    Bld_Paths    include_dirs;        /* -I */
+    Bld_Paths    system_include_dirs; /* -isystem */
+    Bld_Strs     libs;                /* -l names ("ssl", "crypto") */
+    Bld_Paths    lib_dirs;            /* -L paths */
     const char*  extra_cflags;        /* raw extra compile flags */
     const char*  extra_ldflags;       /* raw extra link flags */
 } Bld_Dep;
 
-/* ===== Compiler/linker flags ===== */
+/* ===== Build / compiler / linker flags ===== */
+
+typedef struct {
+    Bld_Toggle asan;
+    Bld_Toggle lto;
+} Bld_BuildFlags;
 
 typedef struct {
     Bld_Optimize   optimize;
     Bld_Toggle     warnings;
+    Bld_Toggle     debug_info;
     const char*    extra_flags;
-    const char**   defines;             /* NULL-terminated */
-    const char**   include_dirs;        /* NULL-terminated, -I */
-    const char**   system_include_dirs; /* NULL-terminated, -isystem */
+    Bld_Strs       defines;
+    Bld_Paths      include_dirs;        /* -I */
+    Bld_Paths      system_include_dirs; /* -isystem */
 } Bld_CompileFlags;
 
 typedef struct {
-    Bld_Toggle asan;
-    Bld_Toggle debug_info;
-    Bld_Toggle lto;
     const char* extra_flags;   /* appended after objects, e.g. "-lm -ldl" */
+    Bld_Strs    libs;          /* -l names */
+    Bld_Paths   lib_dirs;      /* -L paths */
 } Bld_LinkFlags;
 
 typedef BLD_DA(Bld_LazyPath) Bld_LazyPathList;
@@ -286,7 +383,7 @@ typedef struct {
     const char*  name;
     Bld_Target*  exe;
     const char*  working_dir;
-    const char** args;
+    Bld_Strs     args;
     int          timeout;  /* seconds, 0 = no timeout */
 } Bld_TestEntry;
 
@@ -307,36 +404,40 @@ struct Bld_Target {
 
 /* ===== Opts structs (for compound-literal macros) ===== */
 
-#define BLD_PATHS(...) ((const char*[]){__VA_ARGS__, NULL})
-#define BLD_DEFS(...)  ((const char*[]){__VA_ARGS__, NULL})
+/* BLD_PATHS and BLD_STRS macros defined above in typed wrappers section */
 
 typedef struct {
     const char*      name;
     const char*      desc;
     const char*      output_name; /* override output filename (default: name) */
-    const char**     sources;
+    Bld_Paths        sources;
     Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
     Bld_CompileFlags compile;
+    Bld_CompileFlags compile_propagate; /* public: propagated to link_with consumers */
     Bld_LinkFlags    link;
+    Bld_LinkFlags    link_propagate;    /* public: propagated to link_with consumers */
+    Bld_Toolchain*   toolchain;  /* NULL = use Bld default */
 } Bld_ExeOpts;
 
 typedef struct {
     const char*      name;
     const char*      desc;
-    const char*      output_name; /* override lib filename base (default: name) */
-    const char**     sources;
+    const char*      lib_basename; /* override lib filename base (default: name), toolchain adds prefix/suffix */
+    Bld_Paths        sources;
     Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
-    Bld_CompileFlags compile;      /* private: for compiling this lib's sources */
-    Bld_CompileFlags compile_pub;  /* public: propagated to targets that link_with this lib */
+    Bld_CompileFlags compile;           /* private: for compiling this lib's sources */
+    Bld_CompileFlags compile_propagate; /* public: propagated to targets that link_with this lib */
     Bld_LinkFlags    link;
-    int              shared;  /* 0 = static (default), 1 = shared */
+    Bld_LinkFlags    link_propagate;    /* public: propagated to consumers via link_with */
+    bool             shared;
+    Bld_Toolchain*   toolchain;  /* NULL = use Bld default */
 } Bld_LibOpts;
 
 typedef struct {
     const char*    name;
     const char*    desc;
     const char*    working_dir;
-    const char**   args;
+    Bld_Strs       args;
 } Bld_RunOpts;
 
 typedef struct {
@@ -346,10 +447,17 @@ typedef struct {
     void*          action_ctx;
     Bld_HashFn     hash_fn;
     void*          hash_fn_ctx;
-    int            has_depfile;
-    int            content_hash; /* 1: use output content hash for early cutoff (default for steps) */
-    const char**   watch;        /* NULL-terminated list of files to hash for cache invalidation */
+    bool           has_depfile;
+    bool           content_hash; /* use output content hash for early cutoff (default for steps) */
+    Bld_Paths      watch;        /* files to hash for cache invalidation */
 } Bld_StepOpts;
+
+typedef struct {
+    const char*    name;
+    const char*    desc;
+    const char*    cmd;           /* shell command to execute */
+    Bld_Paths      watch;        /* files to hash for cache */
+} Bld_CmdOpts;
 
 /* ===== Exe, Lib — "derived" from Target ===== */
 
@@ -357,7 +465,8 @@ typedef struct {
     Bld_Target        target;     /* MUST be first */
     Bld_LibOpts       opts;
     Bld_StepList      obj_steps;
-    Bld_Step*         publish_step; /* copies .so to out/lib/ for exe linking */
+    Bld_Step*         publish_step;
+    Bld_Toolchain*    toolchain;  /* resolved: opts.toolchain ?: b->toolchain */
 } Bld_Lib;
 
 typedef BLD_DA(Bld_Lib*) Bld_LibList;
@@ -368,6 +477,7 @@ typedef struct {
     Bld_StepList        obj_steps;
     Bld_LibList         shared_libs;
     Bld_DepList         resolved_ext_deps;
+    Bld_Toolchain*      toolchain;  /* resolved: opts.toolchain ?: b->toolchain */
 } Bld_Exe;
 
 /* ===== Bld context ===== */
@@ -377,7 +487,7 @@ typedef enum { BLD_MODE_DEFAULT = 0, BLD_MODE_DEBUG, BLD_MODE_RELEASE } Bld_Buil
 typedef struct {
     const char* key;
     const char* value;   /* NULL for flag-only (-Dfoo with no =) */
-    int         used;
+    bool        used;
 } Bld_UserOption;
 
 typedef struct {
@@ -391,16 +501,16 @@ typedef BLD_DA(Bld_UserOption)      Bld_UserOptionList;
 typedef BLD_DA(Bld_AvailableOption) Bld_AvailableOptionList;
 
 typedef struct {
-    int           verbose;
-    int           silent;
-    int           show_cached;
-    int           show_help;
-    int           keep_going;
+    bool          verbose;
+    bool          silent;
+    bool          show_cached;
+    bool          show_help;
+    bool          keep_going;
     int           max_jobs;
     Bld_BuildMode mode;
     const char*   install_prefix;
-    const char**  targets;       /* NULL-terminated requested targets */
-    const char**  passthrough;   /* NULL-terminated args after -- */
+    Bld_Strs      targets;       /* requested targets */
+    Bld_Strs      passthrough;   /* args after -- */
 } Bld_Settings;
 
 typedef struct {
@@ -412,15 +522,12 @@ typedef struct {
     Bld_Path cache;
     Bld_Path out;
 
-    Bld_Compiler compilers[BLD_LANG__COUNT - 1]; /* [0]=C, [1]=CXX, [2]=ASM */
+    Bld_Toolchain* toolchain;
     Bld_Optimize   global_optimize;
-    int            global_warnings;
-    Bld_LinkFlags  global_link;
+    bool           global_warnings;
+    Bld_BuildFlags build_flags;
 
-    const char* static_link_tool;
-
-    Bld_Target*  install_target;
-    Bld_Target*  build_all_target;
+    Bld_Target*  target_default;
     Bld_StepList        all_steps;
     Bld_TargetList      all_targets;
 
@@ -442,8 +549,9 @@ typedef struct {
 
 static inline Bld_Compiler* bld_compiler(Bld* b, Bld_Lang lang) {
     assert(lang >= BLD_LANG_C && lang < BLD_LANG__COUNT);
-    return &b->compilers[lang - 1];
+    return &b->toolchain->compilers[lang - 1];
 }
+
 
 /* ===== Compiler setter API ===== */
 
@@ -465,11 +573,13 @@ void bld__set_compiler_asm(Bld* b, const Bld_AsmCompilerOpts* opts);
 Bld_Target* bld__add_exe(Bld* b, const Bld_ExeOpts* opts);
 Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts);
 Bld_Target* bld__add_step(Bld* b, const Bld_StepOpts* opts);
+Bld_Target* bld__add_cmd(Bld* b, const Bld_CmdOpts* opts);
 Bld_Target* bld__add_run(Bld* b, Bld_Target* target, const Bld_RunOpts* opts);
 
 #define bld_add_exe(b, ...)       bld__add_exe((b), &(Bld_ExeOpts){__VA_ARGS__})
 #define bld_add_lib(b, ...)       bld__add_lib((b), &(Bld_LibOpts){__VA_ARGS__})
 #define bld_add_step(b, ...)      bld__add_step((b), &(Bld_StepOpts){__VA_ARGS__})
+#define bld_add_cmd(b, ...)       bld__add_cmd((b), &(Bld_CmdOpts){__VA_ARGS__})
 #define bld_add_run(b, tgt, ...)  bld__add_run((b), (tgt), &(Bld_RunOpts){__VA_ARGS__})
 
 /* dependency: pure ordering */
@@ -492,6 +602,8 @@ void bld_add_source(Bld_Target* t, Bld_LazyPath src);
 Bld_Target* bld_install_exe(Bld* b, Bld_Target* exe);
 Bld_Target* bld_install_lib(Bld* b, Bld_Target* lib);
 Bld_Target* bld_install(Bld* b, Bld_Target* target, Bld_Path dst);
+Bld_Target* bld_install_files(Bld* b, Bld_Paths files, Bld_Path dst);
+Bld_Target* bld_install_dir(Bld* b, const char* src_dir, Bld_Path dst);
 
 /* external dependencies — bld__dep, bld_find_pkg declared in bld_dep.h */
 void     bld_use_dep(Bld_Target* t, Bld_Dep* dep);
@@ -505,12 +617,12 @@ Bld_CompileFlags bld_clone_compile_flags(Bld_CompileFlags f);
 
 /* build mode defaults */
 Bld_CompileFlags bld_default_compile_flags(Bld* b);
-Bld_LinkFlags    bld_default_link_flags(Bld* b);
+/* default_link_flags removed — link flags no longer carry build-global toggles */
 
 /* child build context (shares cache with parent, for feature checks / subbuilds) */
 Bld* bld_new(Bld* parent);
 void bld_execute(Bld* b);
-int  bld_target_ok(Bld_Target* t);
+bool bld_target_ok(Bld_Target* t);
 Bld_Path bld_target_artifact(Bld* b, Bld_Target* t);
 
 /* feature detection checks — declared in bld_checks.h */
@@ -538,4 +650,3 @@ extern const char* bld_recompile_cmd;
 
 /* user must define this */
 void configure(Bld* b);
-

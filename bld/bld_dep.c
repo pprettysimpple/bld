@@ -3,23 +3,36 @@
 
 #include "bld_dep.h"
 
+static Bld_Paths bld__dep_clone_paths(Bld_Paths s) {
+    if (s.len == 0) return (Bld_Paths){0};
+    const char** copy = bld_arena_alloc(s.len * sizeof(const char*));
+    for (size_t i = 0; i < s.len; i++) copy[i] = bld_str_dup(s.items[i]);
+    return (Bld_Paths){copy, s.len, 0};
+}
+
+static Bld_Strs bld__dep_clone_strs(Bld_Strs s) {
+    if (s.len == 0) return (Bld_Strs){0};
+    const char** copy = bld_arena_alloc(s.len * sizeof(const char*));
+    for (size_t i = 0; i < s.len; i++) copy[i] = bld_str_dup(s.items[i]);
+    return (Bld_Strs){copy, s.len, 0};
+}
+
 Bld_Dep* bld__dep(const Bld_Dep* d) {
     Bld_Dep* c = bld_arena_alloc(sizeof(Bld_Dep));
     *c = *d;
-    c->found = 1;
+    c->found = true;
     if (d->name) c->name = bld_str_dup(d->name);
-    c->include_dirs = bld_dup_strarray(d->include_dirs);
-    c->system_include_dirs = bld_dup_strarray(d->system_include_dirs);
-    c->libs = bld_dup_strarray(d->libs);
-    c->lib_dirs = bld_dup_strarray(d->lib_dirs);
+    c->include_dirs = bld__dep_clone_paths(d->include_dirs);
+    c->system_include_dirs = bld__dep_clone_paths(d->system_include_dirs);
+    c->libs = bld__dep_clone_strs(d->libs);
+    c->lib_dirs = bld__dep_clone_paths(d->lib_dirs);
     if (d->extra_cflags) c->extra_cflags = bld_str_dup(d->extra_cflags);
     if (d->extra_ldflags) c->extra_ldflags = bld_str_dup(d->extra_ldflags);
     return c;
 }
 
-static void bld__parse_pkg_flags(const char* output, Bld_Dep* dep, int is_libs) {
+static void bld__parse_pkg_flags(const char* output, Bld_Dep* dep, bool is_libs) {
     if (!output || !output[0]) return;
-    Bld_Strings sysinc = {0}, libs = {0}, libdirs = {0};
 
     const char* p = output;
     while (*p) {
@@ -32,11 +45,11 @@ static void bld__parse_pkg_flags(const char* output, Bld_Dep* dep, int is_libs) 
         memcpy(s, tok, len); s[len] = '\0';
 
         if (is_libs) {
-            if (strncmp(s, "-L", 2) == 0)      bld_da_push(&libdirs, bld_str_dup(s + 2));
-            else if (strncmp(s, "-l", 2) == 0)  bld_da_push(&libs, bld_str_dup(s + 2));
+            if (strncmp(s, "-L", 2) == 0)      bld_paths_push(&dep->lib_dirs, bld_str_dup(s + 2));
+            else if (strncmp(s, "-l", 2) == 0)  bld_strs_push(&dep->libs, bld_str_dup(s + 2));
         } else {
             if (strncmp(s, "-isystem", 8) == 0) {
-                if (len > 8) bld_da_push(&sysinc, bld_str_dup(s + 8));
+                if (len > 8) bld_paths_push(&dep->system_include_dirs, bld_str_dup(s + 8));
                 else {
                     while (*p == ' ') p++;
                     const char* t2 = p;
@@ -44,19 +57,12 @@ static void bld__parse_pkg_flags(const char* output, Bld_Dep* dep, int is_libs) 
                     if (p > t2) {
                         char* s2 = bld_arena_alloc((size_t)(p - t2) + 1);
                         memcpy(s2, t2, (size_t)(p - t2)); s2[p - t2] = '\0';
-                        bld_da_push(&sysinc, s2);
+                        bld_paths_push(&dep->system_include_dirs, s2);
                     }
                 }
             }
-            else if (strncmp(s, "-I", 2) == 0)  bld_da_push(&sysinc, bld_str_dup(s + 2));
+            else if (strncmp(s, "-I", 2) == 0)  bld_paths_push(&dep->system_include_dirs, bld_str_dup(s + 2));
         }
-    }
-
-    if (is_libs) {
-        if (libs.count) { bld_da_push(&libs, (const char*)NULL); dep->libs = libs.items; }
-        if (libdirs.count) { bld_da_push(&libdirs, (const char*)NULL); dep->lib_dirs = libdirs.items; }
-    } else {
-        if (sysinc.count) { bld_da_push(&sysinc, (const char*)NULL); dep->system_include_dirs = sysinc.items; }
     }
 }
 
@@ -67,10 +73,10 @@ Bld_Dep* bld_find_pkg(const char* name) {
 
     const char* check = bld_str_fmt("pkg-config --exists %s 2>/dev/null", name);
     if (system(check) != 0) {
-        dep->found = 0;
+        dep->found = false;
         return dep;
     }
-    dep->found = 1;
+    dep->found = true;
 
     const char* cmd_cf = bld_str_fmt("pkg-config --cflags %s 2>/dev/null", name);
     FILE* f = popen(cmd_cf, "r");
@@ -79,7 +85,7 @@ Bld_Dep* bld_find_pkg(const char* name) {
         size_t n = fread(buf, 1, sizeof(buf) - 1, f);
         buf[n] = '\0';
         pclose(f);
-        bld__parse_pkg_flags(buf, dep, 0);
+        bld__parse_pkg_flags(buf, dep, false);
     }
 
     const char* cmd_libs = bld_str_fmt("pkg-config --libs %s 2>/dev/null", name);
@@ -89,7 +95,7 @@ Bld_Dep* bld_find_pkg(const char* name) {
         size_t n = fread(buf, 1, sizeof(buf) - 1, f);
         buf[n] = '\0';
         pclose(f);
-        bld__parse_pkg_flags(buf, dep, 1);
+        bld__parse_pkg_flags(buf, dep, true);
     }
 
     return dep;

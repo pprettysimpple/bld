@@ -4,134 +4,56 @@
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
 void configure(Bld* b) {
-    set_compiler_c(b, .standard = C_11);
-    set_compiler_cxx(b, .standard = CXX_17);
+    bld_set_compiler_c(b, .standard = BLD_C_11);
 
-    CompileFlags base = default_compile_flags(b);
-    base.include_dirs = BLD_PATHS("include");
-    LinkFlags lf = default_link_flags(b);
+    // libbase: a.c b.c c.c
+    Target* base = add_lib(b, .name = "base",
+        .sources = BLD_PATHS("s/a.c", "s/b.c", "s/c.c"));
 
-    /* ---- shared_base (C++) ---- */
-    Target* sbase = add_lib(b, .name = "sbase",
-        .sources = files_glob("sbase/*.cpp"),
-        .compile = base, .link = lf);
+    // libmid1: d.c e.c -> base
+    Target* mid1 = add_lib(b, .name = "mid1",
+        .sources = BLD_PATHS("s/d.c", "s/e.c"));
+    link_with(mid1, base);
 
-    /* ---- static libs ---- */
-    Target* core = add_lib(b, .name = "core",
-        .sources = files_glob("lcore/*.c"),
-        .compile = base, .link = lf);
-    link_with(core, sbase);
+    // libdeep: f.c g.c -> mid1
+    Target* deep = add_lib(b, .name = "deep",
+        .sources = BLD_PATHS("s/f.c", "s/g.c"));
+    link_with(deep, mid1);
 
-    Target* math = add_lib(b, .name = "math",
-        .sources = files_glob("lmath/*.c"),
-        .compile = base, .link = lf);
-    link_with(math, core);
+    // libmid2: h.c i.c j.c -> base
+    Target* mid2 = add_lib(b, .name = "mid2",
+        .sources = BLD_PATHS("s/h.c", "s/i.c", "s/j.c"));
+    link_with(mid2, base);
 
-    Target* text = add_lib(b, .name = "text",
-        .sources = files_glob("ltext/*.c"),
-        .compile = base, .link = lf);
-    link_with(text, core);
+    // libside: k.c l.c -> base
+    Target* side = add_lib(b, .name = "side",
+        .sources = BLD_PATHS("s/k.c", "s/l.c"));
+    link_with(side, base);
 
-    Target* io = add_lib(b, .name = "io",
-        .sources = files_glob("lio/*.c"),
-        .compile = base, .link = lf);
-    link_with(io, core);
+    // app1: m.c n.c o.c -> deep + mid2
+    Target* app1 = add_exe(b, .name = "app1",
+        .sources = BLD_PATHS("s/m.c", "s/n.c", "s/o.c"));
+    link_with(app1, deep);
+    link_with(app1, mid2);
 
-    Target* util = add_lib(b, .name = "util",
-        .sources = files_glob("lutil/*.c"),
-        .compile = base, .link = lf);
-    link_with(util, sbase);
+    // app2: p.c q.c -> mid2 + side
+    Target* app2 = add_exe(b, .name = "app2",
+        .sources = BLD_PATHS("s/p.c", "s/q.c"));
+    link_with(app2, mid2);
+    link_with(app2, side);
 
-    Target* fmt = add_lib(b, .name = "fmt",
-        .sources = files_glob("lfmt/*.c"),
-        .compile = base, .link = lf);
-    link_with(fmt, util);
-    link_with(fmt, text);
+    // app3: r.c s.c t.c -> side + mid1
+    Target* app3 = add_exe(b, .name = "app3",
+        .sources = BLD_PATHS("s/r.c", "s/ss.c", "s/t.c"));
+    link_with(app3, side);
+    link_with(app3, mid1);
 
-    Target* net = add_lib(b, .name = "net",
-        .sources = files_glob("lnet/*.c"),
-        .compile = base, .link = lf);
-    link_with(net, sbase);
-
-    /* ---- executables ---- */
-    Target* app_main = add_exe(b, .name = "app_main",
-        .sources = files_glob("amain/*.c"),
-        .compile = base, .link = lf);
-    link_with(app_main, math);
-    link_with(app_main, text);
-    link_with(app_main, fmt);
-
-    Target* app_tool = add_exe(b, .name = "app_tool",
-        .sources = files_glob("atool/*.c"),
-        .compile = base, .link = lf);
-    link_with(app_tool, core);
-    link_with(app_tool, util);
-
-    Target* app_serv = add_exe(b, .name = "app_serv",
-        .sources = files_glob("aserv/*.c"),
-        .compile = base, .link = lf);
-    link_with(app_serv, net);
-    link_with(app_serv, io);
-    link_with(app_serv, core);
-
-    Target* app_cli = add_exe(b, .name = "app_cli",
-        .sources = files_glob("acli/*.c"),
-        .compile = base, .link = lf);
-    link_with(app_cli, math);
-    link_with(app_cli, fmt);
-    link_with(app_cli, net);
-
-    /* ---- plugins (shared libs) ---- */
-    Target* pluga = add_lib(b, .name = "pluga",
-        .sources = files_glob("pluga/*.c"),
-        .compile = base, .link = lf);
-    link_with(pluga, core);
-
-    Target* plugb = add_lib(b, .name = "plugb",
-        .sources = files_glob("plugb/*.c"),
-        .compile = base, .link = lf);
-    link_with(plugb, util);
-    link_with(plugb, text);
-
-    Target* plugc = add_lib(b, .name = "plugc",
-        .sources = files_glob("plugc/*.c"),
-        .compile = base, .link = lf);
-    link_with(plugc, math);
-
-    /* ---- test exes ---- */
-    Target* tcore = add_exe(b, .name = "test_core",
-        .sources = files_glob("tcore/*.c"),
-        .compile = base, .link = lf);
-    link_with(tcore, core);
-
-    Target* tmath = add_exe(b, .name = "test_math",
-        .sources = files_glob("tmath/*.c"),
-        .compile = base, .link = lf);
-    link_with(tmath, math);
-
-    Target* tnet = add_exe(b, .name = "test_net",
-        .sources = files_glob("tnet/*.c"),
-        .compile = base, .link = lf);
-    link_with(tnet, net);
-    link_with(tnet, sbase);
-
-    /* ---- install all ---- */
-    install_exe(b, app_main);
-    install_exe(b, app_tool);
-    install_exe(b, app_serv);
-    install_exe(b, app_cli);
-    install_exe(b, tcore);
-    install_exe(b, tmath);
-    install_exe(b, tnet);
-    install_lib(b, sbase);
-    install_lib(b, core);
-    install_lib(b, math);
-    install_lib(b, text);
-    install_lib(b, io);
-    install_lib(b, util);
-    install_lib(b, fmt);
-    install_lib(b, net);
-    install_lib(b, pluga);
-    install_lib(b, plugb);
-    install_lib(b, plugc);
+    install_exe(b, app1);
+    install_exe(b, app2);
+    install_exe(b, app3);
+    install_lib(b, base);
+    install_lib(b, mid1);
+    install_lib(b, deep);
+    install_lib(b, mid2);
+    install_lib(b, side);
 }
