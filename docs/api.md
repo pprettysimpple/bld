@@ -113,9 +113,10 @@ Bld_Paths combined = bld_files_merge(lib_srcs, extra_srcs);
 (e.g. `"lib/**/*.c"` finds all `.c` files under `lib/` at any depth).
 Patterns without a directory prefix (e.g. `"*.c"`) search the current directory.
 
-`bld_files_exclude` accepts exact paths or glob patterns. If the exclude string
-contains `*`, `?`, or `[`, it matches against the basename of each path using
-`fnmatch`. Otherwise it uses exact string comparison.
+`bld_files_exclude` accepts exact paths, glob patterns, or directory prefixes:
+- `"src/test_main.c"` — exact path match
+- `"*_test.c"` — glob pattern matched against basename (if contains `*`, `?`, `[`)
+- `"src/win"` — directory prefix: excludes all files under `src/win/`
 
 ### Dynamic Construction
 

@@ -745,8 +745,16 @@ Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
                 const char* base = strrchr(files.items[i], '/');
                 base = base ? base + 1 : files.items[i];
                 if (fnmatch(pat, base, 0) == 0) { skip = true; break; }
+            } else if (strcmp(files.items[i], pat) == 0) {
+                /* exact match */
+                skip = true; break;
             } else {
-                if (strcmp(files.items[i], pat) == 0) { skip = true; break; }
+                /* directory prefix: "src/win" matches "src/win/core.c" */
+                size_t plen = strlen(pat);
+                if (plen > 0 && strncmp(files.items[i], pat, plen) == 0
+                    && files.items[i][plen] == '/') {
+                    skip = true; break;
+                }
             }
         }
         if (!skip) bld_paths_push(&result, files.items[i]);
