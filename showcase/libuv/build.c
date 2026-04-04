@@ -204,9 +204,13 @@ void configure(Bld* b) {
             .link    = { .libs = BLD_STRS("util") }
         );
         link_with(test_exe, uv);
+        install_exe(b, test_exe);
 
+        /* Register as bld test. Note: 2 multicast tests (udp_multicast_join,
+         * udp_multicast_join6) may timeout without multicast-capable networking.
+         * This is a known libuv CI issue, not a build problem. */
         add_test(b, test_exe,
-            .name    = "libuv-tests",
-            .desc    = "Run libuv test suite");
+            .name = "libuv-tests",
+            .desc = "Run libuv test suite");
     }
 }
