@@ -105,6 +105,7 @@ Same as Exe, except:
 Bld_Paths all      = bld_files_glob("src/*.c");          // non-recursive
 Bld_Paths deep     = bld_files_glob("src/**/*.c");       // recursive into subdirs
 Bld_Paths filtered = bld_files_exclude(all, BLD_PATHS("src/test_main.c"));
+Bld_Paths no_tests = bld_files_exclude(all, BLD_PATHS("*_test.c"));  // glob pattern on basename
 Bld_Paths combined = bld_files_merge(lib_srcs, extra_srcs);
 ```
 
@@ -112,8 +113,9 @@ Bld_Paths combined = bld_files_merge(lib_srcs, extra_srcs);
 (e.g. `"lib/**/*.c"` finds all `.c` files under `lib/` at any depth).
 Patterns without a directory prefix (e.g. `"*.c"`) search the current directory.
 
-`bld_files_exclude` matches paths by exact string comparison against glob results
-(e.g. if glob returned `"src/foo.c"`, exclude must use `"src/foo.c"`, not `"foo.c"`).
+`bld_files_exclude` accepts exact paths or glob patterns. If the exclude string
+contains `*`, `?`, or `[`, it matches against the basename of each path using
+`fnmatch`. Otherwise it uses exact string comparison.
 
 ### Dynamic Construction
 

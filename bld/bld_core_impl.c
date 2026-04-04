@@ -738,7 +738,16 @@ Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
     for (size_t i = 0; i < files.len; i++) {
         bool skip = false;
         for (size_t j = 0; j < exclude.len; j++) {
-            if (strcmp(files.items[i], exclude.items[j]) == 0) { skip = true; break; }
+            const char* pat = exclude.items[j];
+            bool is_glob = (strpbrk(pat, "*?[") != NULL);
+            if (is_glob) {
+                /* match pattern against basename */
+                const char* base = strrchr(files.items[i], '/');
+                base = base ? base + 1 : files.items[i];
+                if (fnmatch(pat, base, 0) == 0) { skip = true; break; }
+            } else {
+                if (strcmp(files.items[i], pat) == 0) { skip = true; break; }
+            }
         }
         if (!skip) bld_paths_push(&result, files.items[i]);
     }
