@@ -79,6 +79,8 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
     Bld_ActionResult result = step->action(step->action_ctx, tmp_out, tmp_dep);
 
     if (result != BLD_ACTION_OK) {
+        if (!b->settings.silent && step->name[0])
+            fprintf(stderr, "\x1b[1;31mbld: step failed:\x1b[0m %s\n", step->name);
         __atomic_fetch_add(&b->steps_failed, 1, __ATOMIC_RELAXED);
         bld__step_set_state(step, BLD_STEP_FAILED);
         return;
