@@ -216,6 +216,10 @@ Standards: `BLD_C_90/99/11/17/23`, `BLD_C_GNU90/99/11/17/23`,
 Note: strict standards (`BLD_C_11`) disable POSIX/GNU extensions. If your code uses
 `strdup`, `fdopen`, `realpath`, etc., use `BLD_C_GNU11` or add `_GNU_SOURCE` to defines.
 
+Mixed C/C++ builds: when a target contains `.cpp`/`.cxx`/`.cc` sources, bld
+automatically uses the C++ compiler as the linker driver. No need to add
+`-lstdc++` manually.
+
 ## Linking Targets Together
 
 ```c
@@ -303,14 +307,16 @@ Available: `BLD_OS_LINUX`, `BLD_OS_MACOS`, `BLD_OS_WINDOWS`, `BLD_OS_FREEBSD`.
 
 ## Installation
 
+All install paths are relative to `--prefix` (default: `build/`).
+
 ```c
-bld_install_exe(b, exe);     // installs to <prefix>/bin/
-bld_install_lib(b, lib);     // installs to <prefix>/lib/
+bld_install_exe(b, exe);     // → <prefix>/bin/<name>
+bld_install_lib(b, lib);     // → <prefix>/lib/lib<name>.a
 
 // install specific files to a subpath under prefix
 bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
 
-// install entire directory tree
+// install entire directory tree (recursive copy)
 bld_install_dir(b, "doc", bld_filepath("share/doc/mylib"));
 
 // install any target artifact to custom path
@@ -347,9 +353,11 @@ Options appear in `./b --help`.
 ```c
 bld_override_file(lib, "third_party/noisy.c", .warnings = BLD_OFF);
 bld_override_file(lib, "hot_path.c", .optimize = BLD_OPT_O3);
+bld_override_file(lib, "vendor/dtoa.c", .extra_flags = "-DIEEE_8087");
 ```
 
 Non-zero fields override the target's compile flags for that specific file.
+Available override fields: `.warnings`, `.optimize`, `.extra_flags`, `.debug_info`.
 
 ## Custom Steps
 

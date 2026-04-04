@@ -114,9 +114,10 @@
  * (e.g. `"lib/**\/*.c"` finds all `.c` files under `lib/` at any depth).
  * Patterns without a directory prefix (e.g. `"*.c"`) search the current directory.
  * 
- * `bld_files_exclude` accepts exact paths or glob patterns. If the exclude string
- * contains `*`, `?`, or `[`, it matches against the basename of each path using
- * `fnmatch`. Otherwise it uses exact string comparison.
+ * `bld_files_exclude` accepts exact paths, glob patterns, or directory prefixes:
+ * - `"src/test_main.c"` — exact path match
+ * - `"*_test.c"` — glob pattern matched against basename (if contains `*`, `?`, `[`)
+ * - `"src/win"` — directory prefix: excludes all files under `src/win/`
  * 
  * ### Dynamic Construction
  * 
@@ -216,6 +217,10 @@
  * Note: strict standards (`BLD_C_11`) disable POSIX/GNU extensions. If your code uses
  * `strdup`, `fdopen`, `realpath`, etc., use `BLD_C_GNU11` or add `_GNU_SOURCE` to defines.
  * 
+ * Mixed C/C++ builds: when a target contains `.cpp`/`.cxx`/`.cc` sources, bld
+ * automatically uses the C++ compiler as the linker driver. No need to add
+ * `-lstdc++` manually.
+ * 
  * ## Linking Targets Together
  * 
  * ```c
@@ -303,14 +308,16 @@
  * 
  * ## Installation
  * 
+ * All install paths are relative to `--prefix` (default: `build/`).
+ * 
  * ```c
- * bld_install_exe(b, exe);     // installs to <prefix>/bin/
- * bld_install_lib(b, lib);     // installs to <prefix>/lib/
+ * bld_install_exe(b, exe);     // → <prefix>/bin/<name>
+ * bld_install_lib(b, lib);     // → <prefix>/lib/lib<name>.a
  * 
  * // install specific files to a subpath under prefix
  * bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
  * 
- * // install entire directory tree
+ * // install entire directory tree (recursive copy)
  * bld_install_dir(b, "doc", bld_filepath("share/doc/mylib"));
  * 
  * // install any target artifact to custom path
@@ -347,9 +354,11 @@
  * ```c
  * bld_override_file(lib, "third_party/noisy.c", .warnings = BLD_OFF);
  * bld_override_file(lib, "hot_path.c", .optimize = BLD_OPT_O3);
+ * bld_override_file(lib, "vendor/dtoa.c", .extra_flags = "-DIEEE_8087");
  * ```
  * 
  * Non-zero fields override the target's compile flags for that specific file.
+ * Available override fields: `.warnings`, `.optimize`, `.extra_flags`, `.debug_info`.
  * 
  * ## Custom Steps
  * 
@@ -9226,8 +9235,16 @@ Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
                 const char* base = strrchr(files.items[i], '/');
                 base = base ? base + 1 : files.items[i];
                 if (fnmatch(pat, base, 0) == 0) { skip = true; break; }
+            } else if (strcmp(files.items[i], pat) == 0) {
+                /* exact match */
+                skip = true; break;
             } else {
-                if (strcmp(files.items[i], pat) == 0) { skip = true; break; }
+                /* directory prefix: "src/win" matches "src/win/core.c" */
+                size_t plen = strlen(pat);
+                if (plen > 0 && strncmp(files.items[i], pat, plen) == 0
+                    && files.items[i][plen] == '/') {
+                    skip = true; break;
+                }
             }
         }
         if (!skip) bld_paths_push(&result, files.items[i]);
