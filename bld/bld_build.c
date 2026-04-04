@@ -104,10 +104,19 @@ static Bld_Step* bld__alloc_step(Bld* b, const char* name, bool silent) {
  *  Target primitives
  * ================================================================ */
 
+static const char* bld__target_prefix(Bld_TargetKind kind) {
+    switch (kind) {
+        case BLD_TGT_EXE: return "exe:";
+        case BLD_TGT_LIB: return "lib:";
+        default:           return "";
+    }
+}
+
 static void bld__init_target(Bld* b, Bld_Target* t, Bld_TargetKind kind,
                               const char* name, const char* desc) {
     t->kind = kind;
-    t->name = name ? bld_str_dup(name) : "";
+    const char* raw = name ? name : "";
+    t->name = bld_str_fmt("%s%s", bld__target_prefix(kind), raw);
     t->desc = desc ? bld_str_dup(desc) : "";
     for (size_t i = 0; i < b->all_targets.count; i++)
         if (strcmp(b->all_targets.items[i]->name, t->name) == 0)
