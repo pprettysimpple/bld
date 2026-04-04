@@ -71,7 +71,8 @@ const char* bld_str_cat(const char* first, ...); /* NULL sentinel */
 
 typedef struct { const char* s; } Bld_Path;
 
-#define bld_path(literal) ((Bld_Path){(literal)})
+#define bld_filepath(literal) ((Bld_Path){(literal)})
+#define bld_path(literal) bld_filepath(literal)  /* compat alias */
 
 Bld_Path    bld_path_join(Bld_Path a, Bld_Path b);
 Bld_Path    bld_path_parent(Bld_Path p);

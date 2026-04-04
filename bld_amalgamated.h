@@ -106,6 +106,7 @@
  * Bld_Paths all      = bld_files_glob("src/*.c");          // non-recursive
  * Bld_Paths deep     = bld_files_glob("src/**\/*.c");       // recursive into subdirs
  * Bld_Paths filtered = bld_files_exclude(all, BLD_PATHS("src/test_main.c"));
+ * Bld_Paths no_tests = bld_files_exclude(all, BLD_PATHS("*_test.c"));  // glob pattern on basename
  * Bld_Paths combined = bld_files_merge(lib_srcs, extra_srcs);
  * ```
  * 
@@ -113,8 +114,9 @@
  * (e.g. `"lib/**\/*.c"` finds all `.c` files under `lib/` at any depth).
  * Patterns without a directory prefix (e.g. `"*.c"`) search the current directory.
  * 
- * `bld_files_exclude` matches paths by exact string comparison against glob results
- * (e.g. if glob returned `"src/foo.c"`, exclude must use `"src/foo.c"`, not `"foo.c"`).
+ * `bld_files_exclude` accepts exact paths or glob patterns. If the exclude string
+ * contains `*`, `?`, or `[`, it matches against the basename of each path using
+ * `fnmatch`. Otherwise it uses exact string comparison.
  * 
  * ### Dynamic Construction
  * 
@@ -306,13 +308,13 @@
  * bld_install_lib(b, lib);     // installs to <prefix>/lib/
  * 
  * // install specific files to a subpath under prefix
- * bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_path("include"));
+ * bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
  * 
  * // install entire directory tree
- * bld_install_dir(b, "doc", bld_path("share/doc/mylib"));
+ * bld_install_dir(b, "doc", bld_filepath("share/doc/mylib"));
  * 
  * // install any target artifact to custom path
- * bld_install(b, codegen_target, bld_path("share/myapp"));
+ * bld_install(b, codegen_target, bld_filepath("share/myapp"));
  * ```
  * 
  * `./b build` compiles, links, and installs everything.
@@ -360,7 +362,7 @@
  *     // generate code, write to output directory
  *     bld_fs_mkdir_p(output);
  *     const char* code = "#include <stdio.h>\nint gen(void){return 42;}\n";
- *     bld_fs_write_file(bld_path_join(output, bld_path("gen.c")), code, strlen(code));
+ *     bld_fs_write_file(bld_path_join(output, bld_filepath("gen.c")), code, strlen(code));
  *     return BLD_ACTION_OK;  // or BLD_ACTION_FAILED on error
  * }
  * 
@@ -416,10 +418,10 @@
  * ## Filesystem Helpers
  * 
  * ```c
- * bld_fs_exists(bld_path("file.c"))     // returns bool
- * bld_fs_is_dir(bld_path("src"))
- * bld_fs_is_file(bld_path("main.c"))
- * bld_fs_mkdir_p(bld_path("out/gen"))   // recursive mkdir
+ * bld_fs_exists(bld_filepath("file.c"))     // returns bool
+ * bld_fs_is_dir(bld_filepath("src"))
+ * bld_fs_is_file(bld_filepath("main.c"))
+ * bld_fs_mkdir_p(bld_filepath("out/gen"))   // recursive mkdir
  * bld_fs_copy_file(from, to)
  * bld_fs_copy_r(from, to)              // recursive copy
  * bld_fs_remove(path)
@@ -483,7 +485,7 @@
  *     // install
  *     bld_install_exe(b, app);
  *     bld_install_lib(b, lib);
- *     bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_path("include"));
+ *     bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
  * }
  * ```
  * 
@@ -616,7 +618,8 @@ const char* bld_str_cat(const char* first, ...); /* NULL sentinel */
 
 typedef struct { const char* s; } Bld_Path;
 
-#define bld_path(literal) ((Bld_Path){(literal)})
+#define bld_filepath(literal) ((Bld_Path){(literal)})
+#define bld_path(literal) bld_filepath(literal)  /* compat alias */
 
 Bld_Path    bld_path_join(Bld_Path a, Bld_Path b);
 Bld_Path    bld_path_parent(Bld_Path p);
@@ -9216,7 +9219,16 @@ Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
     for (size_t i = 0; i < files.len; i++) {
         bool skip = false;
         for (size_t j = 0; j < exclude.len; j++) {
-            if (strcmp(files.items[i], exclude.items[j]) == 0) { skip = true; break; }
+            const char* pat = exclude.items[j];
+            bool is_glob = (strpbrk(pat, "*?[") != NULL);
+            if (is_glob) {
+                /* match pattern against basename */
+                const char* base = strrchr(files.items[i], '/');
+                base = base ? base + 1 : files.items[i];
+                if (fnmatch(pat, base, 0) == 0) { skip = true; break; }
+            } else {
+                if (strcmp(files.items[i], pat) == 0) { skip = true; break; }
+            }
         }
         if (!skip) bld_paths_push(&result, files.items[i]);
     }

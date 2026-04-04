@@ -307,13 +307,13 @@ bld_install_exe(b, exe);     // installs to <prefix>/bin/
 bld_install_lib(b, lib);     // installs to <prefix>/lib/
 
 // install specific files to a subpath under prefix
-bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_path("include"));
+bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
 
 // install entire directory tree
-bld_install_dir(b, "doc", bld_path("share/doc/mylib"));
+bld_install_dir(b, "doc", bld_filepath("share/doc/mylib"));
 
 // install any target artifact to custom path
-bld_install(b, codegen_target, bld_path("share/myapp"));
+bld_install(b, codegen_target, bld_filepath("share/myapp"));
 ```
 
 `./b build` compiles, links, and installs everything.
@@ -361,7 +361,7 @@ static Bld_ActionResult my_codegen(void* ctx, Bld_Path output, Bld_Path depfile)
     // generate code, write to output directory
     bld_fs_mkdir_p(output);
     const char* code = "#include <stdio.h>\nint gen(void){return 42;}\n";
-    bld_fs_write_file(bld_path_join(output, bld_path("gen.c")), code, strlen(code));
+    bld_fs_write_file(bld_path_join(output, bld_filepath("gen.c")), code, strlen(code));
     return BLD_ACTION_OK;  // or BLD_ACTION_FAILED on error
 }
 
@@ -417,10 +417,10 @@ bld_add_exe(b, .name = "cross", .sources = ..., .toolchain = my_cross_tc);
 ## Filesystem Helpers
 
 ```c
-bld_fs_exists(bld_path("file.c"))     // returns bool
-bld_fs_is_dir(bld_path("src"))
-bld_fs_is_file(bld_path("main.c"))
-bld_fs_mkdir_p(bld_path("out/gen"))   // recursive mkdir
+bld_fs_exists(bld_filepath("file.c"))     // returns bool
+bld_fs_is_dir(bld_filepath("src"))
+bld_fs_is_file(bld_filepath("main.c"))
+bld_fs_mkdir_p(bld_filepath("out/gen"))   // recursive mkdir
 bld_fs_copy_file(from, to)
 bld_fs_copy_r(from, to)              // recursive copy
 bld_fs_remove(path)
@@ -484,7 +484,7 @@ void configure(Bld* b) {
     // install
     bld_install_exe(b, app);
     bld_install_lib(b, lib);
-    bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_path("include"));
+    bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
 }
 ```
 
