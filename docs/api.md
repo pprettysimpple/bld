@@ -67,7 +67,8 @@ Bld_Target* so = bld_add_lib(b,
 
 ### Exe Opts Fields
 
-- `.name` (required) — target identifier, used in CLI and progress output
+- `.name` (required) — target identifier. Automatically prefixed: `lib:name` / `exe:name`.
+  A lib and exe may share the same `.name` (e.g. both "lz4" → `lib:lz4` + `exe:lz4`)
 - `.desc` — shown in `--help`
 - `.output_name` — override output filename (default: `.name`)
 - `.sources` — `Bld_Paths` of source files
@@ -101,12 +102,15 @@ Same as Exe, except:
 ### Globbing
 
 ```c
-Bld_Paths all = bld_files_glob("src/*.c");
+Bld_Paths all      = bld_files_glob("src/*.c");          // non-recursive
+Bld_Paths deep     = bld_files_glob("src/**/*.c");       // recursive into subdirs
 Bld_Paths filtered = bld_files_exclude(all, BLD_PATHS("src/test_main.c"));
 Bld_Paths combined = bld_files_merge(lib_srcs, extra_srcs);
 ```
 
-`bld_files_glob` supports `*` wildcards (not recursive `**`).
+`bld_files_glob` supports `*` and `?` wildcards. Use `**` for recursive matching
+(e.g. `"lib/**/*.c"` finds all `.c` files under `lib/` at any depth).
+Patterns without a directory prefix (e.g. `"*.c"`) search the current directory.
 
 ### Dynamic Construction
 
@@ -311,8 +315,7 @@ Override with `--prefix`: `./b build --prefix /usr/local`
 bld_add_test(b, exe_target,
     .name = "smoke-test",
     .desc = "Verify basic functionality",
-    .args = BLD_STRS("--self-test"),
-    .timeout = 30);  // seconds, 0 = no timeout
+    .args = BLD_STRS("--self-test"));
 ```
 
 CLI: `./b test`
