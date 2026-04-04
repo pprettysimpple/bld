@@ -11,30 +11,21 @@ cd "$(dirname "$0")"
 
 if [ -d "lib" ]; then
     echo "Source already fetched (lib/ exists), skipping download."
-else
-    echo "Downloading curl ${VERSION}..."
-    curl -LO "${URL}"
-
-    echo "Extracting..."
-    tar xzf "${TARBALL}"
-
-    mv "${SRCDIR}/lib" .
-    mv "${SRCDIR}/src" .
-    mv "${SRCDIR}/include" .
-    mv "${SRCDIR}/docs" .
-
-    rm -rf "${SRCDIR}" "${TARBALL}"
-    echo "Done. Sources in lib/, src/, include/"
+    exit 0
 fi
 
-# generated/ contains pre-made curl_config.h and curl_checks.h
-# These are committed alongside this script.
+echo "Downloading curl ${VERSION}..."
+curl -LO "${URL}"
 
-# bld.h — copy amalgamated header if missing
-if [ ! -e "bld.h" ]; then
-    if [ -e "../../out/include/bld.h" ]; then
-        cp "../../out/include/bld.h" bld.h
-    else
-        echo "Warning: bld.h not found. Run './b build' in repo root first, or copy amalgamated bld.h here."
-    fi
-fi
+echo "Extracting..."
+tar xzf "${TARBALL}"
+
+mv "${SRCDIR}/lib" .
+mv "${SRCDIR}/src" .
+mv "${SRCDIR}/include" .
+mv "${SRCDIR}/docs" .
+
+rm -rf "${SRCDIR}" "${TARBALL}"
+echo "Done. Sources in lib/, src/, include/"
+echo ""
+echo "To build:  cc -std=c11 -w build.c -o b -lpthread && ./b build"

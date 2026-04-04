@@ -18,7 +18,7 @@
 
 #define BLD_IMPLEMENTATION
 #define BLD_STRIP_PREFIX
-#include "bld.h"
+#include "../../bld.h"
 
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
