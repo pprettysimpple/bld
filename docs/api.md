@@ -11,7 +11,7 @@ Every build script follows this pattern:
 #define BLD_STRIP_PREFIX   // optional: use add_exe instead of bld_add_exe
 #include "bld.h"
 
-BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
+BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")  // -o is added automatically
 
 void configure(Bld* b) {
     // define targets here
@@ -20,7 +20,7 @@ void configure(Bld* b) {
 
 Bootstrap and run:
 
-    cc -std=c11 -w build.c -o b -lpthread
+    cc -std=c11 -w build.c -o b -lpthread    # -o b only needed for bootstrap
     ./b build              # build and install all targets
     ./b test               # run registered tests
     ./b build --prefix /usr/local  # custom install prefix
@@ -111,6 +111,9 @@ Bld_Paths combined = bld_files_merge(lib_srcs, extra_srcs);
 `bld_files_glob` supports `*` and `?` wildcards. Use `**` for recursive matching
 (e.g. `"lib/**/*.c"` finds all `.c` files under `lib/` at any depth).
 Patterns without a directory prefix (e.g. `"*.c"`) search the current directory.
+
+`bld_files_exclude` matches paths by exact string comparison against glob results
+(e.g. if glob returned `"src/foo.c"`, exclude must use `"src/foo.c"`, not `"foo.c"`).
 
 ### Dynamic Construction
 
@@ -207,6 +210,9 @@ If `.driver` is omitted, bld auto-detects from PATH.
 Standards: `BLD_C_90/99/11/17/23`, `BLD_C_GNU90/99/11/17/23`,
 `BLD_CXX_11/14/17/20/23`, `BLD_CXX_GNU11/14/17/20/23`.
 
+Note: strict standards (`BLD_C_11`) disable POSIX/GNU extensions. If your code uses
+`strdup`, `fdopen`, `realpath`, etc., use `BLD_C_GNU11` or add `_GNU_SOURCE` to defines.
+
 ## Linking Targets Together
 
 ```c
@@ -215,6 +221,9 @@ bld_depends_on(gen, codegen);  // ordering only, no artifact passing
 ```
 
 `bld_link_with` is transitive: if A links B and B links C, A gets C's propagated flags.
+
+Use `link_propagate` on a library for system libs that consumers must also link
+(e.g. `.link_propagate = { .libs = BLD_STRS("m", "dl") }` on a lib that uses `libm`/`libdl`).
 
 ## External Dependencies
 
@@ -351,7 +360,7 @@ static Bld_ActionResult my_codegen(void* ctx, Bld_Path output, Bld_Path depfile)
     bld_fs_mkdir_p(output);
     const char* code = "#include <stdio.h>\nint gen(void){return 42;}\n";
     bld_fs_write_file(bld_path_join(output, bld_path("gen.c")), code, strlen(code));
-    return BLD_ACTION_OK;
+    return BLD_ACTION_OK;  // or BLD_ACTION_FAILED on error
 }
 
 void configure(Bld* b) {
