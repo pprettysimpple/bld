@@ -714,12 +714,11 @@ Bld_Paths bld_files_glob(const char* pattern) {
         struct dirent* ent;
         while ((ent = readdir(d)) != NULL) {
             if (ent->d_name[0] == '.') continue;
-            if (!bld_fs_is_file(bld_path(bld_str_fmt("%s/%s",
-                    strcmp(base_dir, ".") == 0 ? "" : base_dir, ent->d_name)))) continue;
+            const char* path = (strcmp(base_dir, ".") == 0)
+                ? bld_str_dup(ent->d_name)
+                : bld_str_fmt("%s/%s", base_dir, ent->d_name);
+            if (!bld_fs_is_file(bld_path(path))) continue;
             if (fnmatch(match_pat, ent->d_name, 0) == 0) {
-                const char* path = (strcmp(base_dir, ".") == 0)
-                    ? bld_str_dup(ent->d_name)
-                    : bld_str_fmt("%s/%s", base_dir, ent->d_name);
                 bld_paths_push(&result, path);
             }
         }
