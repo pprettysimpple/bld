@@ -599,7 +599,13 @@ void bld_add_include_dir(Bld_Target* t, Bld_LazyPath dir);
 /* add generated source (from codegen step output) */
 void bld_add_source(Bld_Target* t, Bld_LazyPath src);
 
-/* install */
+/* install — dst paths are relative to --prefix (default: build/)
+ *   bld_install_exe   → <prefix>/bin/<name>
+ *   bld_install_lib   → <prefix>/lib/<libname>
+ *   bld_install       → <prefix>/<dst>
+ *   bld_install_files → copies each file into <prefix>/<dst>/
+ *   bld_install_dir   → copies directory tree into <prefix>/<dst>/
+ */
 Bld_Target* bld_install_exe(Bld* b, Bld_Target* exe);
 Bld_Target* bld_install_lib(Bld* b, Bld_Target* lib);
 Bld_Target* bld_install(Bld* b, Bld_Target* target, Bld_Path dst);
