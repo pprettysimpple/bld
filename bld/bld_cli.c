@@ -121,6 +121,7 @@ static void bld__show_help(Bld* b) {
     for (size_t i = 0; i < b->all_targets.count; i++) {
         Bld_Target* t = b->all_targets.items[i];
         if (t->exit->silent) continue;
+        if (t->kind == BLD_TGT_PKG) continue;  /* pkg targets are not buildable */
         bld_log("  %s%-20s%s %s\n", G, t->name, R, t->desc);
     }
 }
@@ -152,7 +153,6 @@ static int bld__handle_test(Bld* b) {
     Bld_StepList to_build = {0};
     for (size_t i = 0; i < b->tests.count; i++)
         bld_da_push(&to_build, b->tests.items[i].exe->exit);
-    bld__check_missing_deps(b);
     Bld_StepList order = bld__topo_sort(b, &to_build);
 
     struct timespec t0;

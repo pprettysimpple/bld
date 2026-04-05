@@ -328,18 +328,7 @@ typedef struct {
     Bld_Path    path;
 } Bld_LazyPath;
 
-/* ===== External dependency bundle ===== */
-
-typedef struct {
-    const char*  name;                /* package name (for error messages) */
-    bool         found;
-    Bld_Paths    include_dirs;        /* -I */
-    Bld_Paths    system_include_dirs; /* -isystem */
-    Bld_Strs     libs;                /* -l names ("ssl", "crypto") */
-    Bld_Paths    lib_dirs;            /* -L paths */
-    const char*  extra_cflags;        /* raw extra compile flags */
-    const char*  extra_ldflags;       /* raw extra link flags */
-} Bld_Dep;
+/* ===== External dependency bundle (internal, being phased out) ===== */
 
 /* ===== Build / compiler / linker flags ===== */
 
@@ -365,7 +354,6 @@ typedef struct {
 } Bld_LinkFlags;
 
 typedef BLD_DA(Bld_LazyPath) Bld_LazyPathList;
-typedef BLD_DA(Bld_Dep*)    Bld_DepList;
 
 /* ===== Target — high-level subgraph ===== */
 
@@ -373,6 +361,7 @@ typedef enum {
     BLD_TGT_EXE,
     BLD_TGT_LIB,
     BLD_TGT_CUSTOM,
+    BLD_TGT_PKG,
 } Bld_TargetKind;
 
 typedef struct {
@@ -396,11 +385,12 @@ struct Bld_Target {
     Bld_TargetKind kind;
     const char*    name;
     const char*    desc;
+    bool           found;   /* true for internal targets, false if find_pkg failed */
     Bld_Step*      entry;   /* no-op input port */
     Bld_Step*      exit;    /* output port (final artifact) */
     Bld_LazyPathList     include_dirs;
     Bld_TargetList       link_deps;        /* public transitive link dependencies */
-    Bld_DepList          ext_deps;         /* external deps (compile: private, link: transitive) */
+    Bld_TargetList       resolved_link_deps; /* filled by resolve, used by render */
     Bld_FileOverrideList file_overrides;   /* per-file compile flag overrides */
     Bld_LazyPathList     lazy_sources;     /* generated sources (added via bld_add_source) */
 };
@@ -479,9 +469,26 @@ typedef struct {
     Bld_ExeOpts         opts;
     Bld_StepList        obj_steps;
     Bld_LibList         shared_libs;
-    Bld_DepList         resolved_ext_deps;
     Bld_Toolchain*      toolchain;  /* resolved: opts.toolchain ?: b->toolchain */
 } Bld_Exe;
+
+/* ===== Package target (external dependency) ===== */
+
+typedef struct {
+    Bld_Target       target;       /* MUST be first */
+    Bld_CompileFlags compile_pub;
+    Bld_LinkFlags    link_pub;
+} Bld_Pkg;
+
+typedef struct {
+    const char*      name;
+    Bld_Paths        include_dirs;
+    Bld_Paths        system_include_dirs;
+    Bld_Strs         libs;
+    Bld_Paths        lib_dirs;
+    const char*      extra_cflags;
+    const char*      extra_ldflags;
+} Bld_PkgOpts;
 
 /* ===== Bld context ===== */
 
@@ -614,8 +621,11 @@ Bld_Target* bld_install(Bld* b, Bld_Target* target, Bld_Path dst);
 Bld_Target* bld_install_files(Bld* b, Bld_Paths files, Bld_Path dst);
 Bld_Target* bld_install_dir(Bld* b, const char* src_dir, Bld_Path dst);
 
-/* external dependencies — bld__dep, bld_find_pkg declared in bld_dep.h */
-void     bld_use_dep(Bld_Target* t, Bld_Dep* dep);
+/* package target (manual external dependency) */
+Bld_Target* bld__add_pkg(Bld* b, const Bld_PkgOpts* opts);
+#define bld_pkg(b, ...) bld__add_pkg((b), &(Bld_PkgOpts){__VA_ARGS__})
+
+/* external dependencies — bld_find_pkg declared in bld_dep.h */
 
 /* per-file compile flag override (non-zero fields override target defaults) */
 void bld__override_file(Bld_Target* t, const char* file, const Bld_CompileFlags* flags);

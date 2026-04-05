@@ -916,8 +916,8 @@ static void bld__gcc_render_compile(Bld_Cmd* cmd, Bld_CompileCmd c) {
     /* PIC */
     if (c.pic) bld_cmd_appendf(cmd, " -fPIC");
 
-    /* extra cflags (merged from ext_deps) — includes target include dirs (quoted),
-       ext_dep -I/-isystem/extra_cflags already flattened into this field */
+    /* extra cflags (merged from resolved link deps) — includes target include dirs (quoted),
+       compile_pub -I/-isystem/defines/extra_flags already flattened into this field */
     if (c.extra_cflags && c.extra_cflags[0]) bld_cmd_appendf(cmd, " %s", c.extra_cflags);
 
     /* source file (quoted) */

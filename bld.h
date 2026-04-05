@@ -101,6 +101,9 @@
 #define TGT_EXE    BLD_TGT_EXE
 #define TGT_LIB    BLD_TGT_LIB
 #define TGT_CUSTOM BLD_TGT_CUSTOM
+#define TGT_PKG    BLD_TGT_PKG
+#define Pkg        Bld_Pkg
+#define PkgOpts    Bld_PkgOpts
 
 /* macros */
 #define STRS(...)  BLD_STRS(__VA_ARGS__)
@@ -183,9 +186,9 @@
 #define install_files            bld_install_files
 #define install_dir              bld_install_dir
 #define add_test(b, t, ...)      bld_add_test((b), (t), __VA_ARGS__)
-#define use_dep                  bld_use_dep
 #define override_file(t, f, ...) bld_override_file((t), (f), __VA_ARGS__)
 #define find_pkg                 bld_find_pkg
+#define pkg(b, ...)              bld_pkg((b), __VA_ARGS__)
 #define clone_compile_flags      bld_clone_compile_flags
 #define default_compile_flags    bld_default_compile_flags
 #define option_bool              bld_option_bool

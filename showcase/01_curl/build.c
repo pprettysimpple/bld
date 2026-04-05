@@ -109,8 +109,8 @@ void configure(Bld* b) {
     /* ------------------------------------------------------------------ */
     /* External dependencies (pkg-config)                                  */
     /* ------------------------------------------------------------------ */
-    Bld_Dep* dep_ssl  = use_ssl  ? find_pkg("openssl") : NULL;
-    Bld_Dep* dep_zlib = use_zlib ? find_pkg("zlib")    : NULL;
+    Bld_Target* dep_ssl  = use_ssl  ? find_pkg(b, "openssl") : NULL;
+    Bld_Target* dep_zlib = use_zlib ? find_pkg(b, "zlib")    : NULL;
 
     /* ------------------------------------------------------------------ */
     /* Feature detection                                                   */
@@ -347,9 +347,9 @@ void configure(Bld* b) {
             .libs = sys_libs,
         });
 
-    /* Apply external deps (only if found — these are optional) */
-    if (dep_ssl  && dep_ssl->found)  use_dep(libcurl, dep_ssl);
-    if (dep_zlib && dep_zlib->found) use_dep(libcurl, dep_zlib);
+    /* Link external deps (only if found — these are optional) */
+    if (dep_ssl  && dep_ssl->found)  link_with(libcurl, dep_ssl);
+    if (dep_zlib && dep_zlib->found) link_with(libcurl, dep_zlib);
 
     /* ------------------------------------------------------------------ */
     /* curl CLI executable                                                 */

@@ -244,27 +244,33 @@ Use `link_pub` on a library for system libs that consumers must also link
 
 ## External Dependencies
 
+External dependencies use the same `bld_link_with` as internal targets.
+`bld_find_pkg` returns a `Bld_Target*` (never NULL). Check `.found` for optional deps.
+
 ### pkg-config
 
 ```c
-Bld_Dep* ssl = bld_find_pkg("openssl");
+Bld_Target* ssl = bld_find_pkg(b, "openssl");
 if (ssl->found) {
-    bld_use_dep(lib, ssl);   // adds include dirs, -l flags, -L flags
+    bld_link_with(lib, ssl);   // adds include dirs, -l flags, -L flags
 }
+// or, for required deps (panics if not found):
+bld_link_with(lib, bld_find_pkg(b, "zlib"));
 ```
 
 ### Manual
 
 ```c
-Bld_Dep* my = bld_dep(
+Bld_Target* my = bld_pkg(b,
     .name         = "mylib",
     .include_dirs = BLD_PATHS("/opt/mylib/include"),
     .libs         = BLD_STRS("mylib"),
     .lib_dirs     = BLD_PATHS("/opt/mylib/lib"));
-bld_use_dep(target, my);
+bld_link_with(target, my);
 ```
 
-`bld_use_dep` applies compile flags (include dirs) privately and link flags transitively.
+`bld_link_with` propagates compile flags (include dirs) and link flags transitively,
+whether the dependency is an internal library, a pkg-config result, or a manual package.
 
 ## Feature Detection
 
@@ -530,8 +536,8 @@ void configure(Bld* b) {
     bld_checks_write(chk, "generated/config.h");
 
     // external deps
-    Bld_Dep* ssl  = bld_find_pkg("openssl");
-    Bld_Dep* zlib = bld_find_pkg("zlib");
+    Bld_Target* ssl  = bld_find_pkg(b, "openssl");
+    Bld_Target* zlib = bld_find_pkg(b, "zlib");
 
     // library
     Bld_Paths srcs = bld_files_glob("lib/*.c");
@@ -543,8 +549,8 @@ void configure(Bld* b) {
         .name    = "mynet",
         .sources = srcs,
         .compile = cf);
-    if (ssl->found)  bld_use_dep(lib, ssl);
-    if (zlib->found) bld_use_dep(lib, zlib);
+    if (ssl->found)  bld_link_with(lib, ssl);
+    if (zlib->found) bld_link_with(lib, zlib);
 
     // executable
     Bld_Target* exe = bld_add_exe(b,

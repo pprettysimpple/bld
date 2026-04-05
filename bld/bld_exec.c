@@ -125,17 +125,7 @@ static void* bld__worker_fn(void* arg) {
     return NULL;
 }
 
-static void bld__check_missing_deps(Bld* b) {
-    for (size_t i = 0; i < b->all_targets.count; i++) {
-        Bld_Target* t = b->all_targets.items[i];
-        for (size_t j = 0; j < t->ext_deps.count; j++) {
-            Bld_Dep* d = t->ext_deps.items[j];
-            if (!d->found)
-                bld_panic("dependency '%s' not found (required by target '%s')\n",
-                          d->name ? d->name : "unknown", t->name);
-        }
-    }
-}
+/* check_missing_deps removed — found check is now in link_with */
 
 static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
     Bld_StepList order = {0};
@@ -263,8 +253,6 @@ static void bld__run_build(Bld* b) {
         if (!found) bld_panic("unknown target: %s\n", rq);
     }
 
-    bld__check_missing_deps(b);
-
     Bld_StepList order = bld__topo_sort(b, &to_build);
 
     struct timespec t0;
@@ -285,7 +273,6 @@ static void bld__run_build(Bld* b) {
 void bld_execute(Bld* b) {
     bld__materialize_lazy_sources(b);
     bld__resolve_link_deps(b);
-    bld__check_missing_deps(b);
 
     Bld_StepList roots = {0};
     for (size_t i = 0; i < b->all_targets.count; i++)
