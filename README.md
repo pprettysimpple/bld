@@ -1,6 +1,6 @@
 # bld
 
-Single-header build system for C. Spiritual successor of [buildpp](https://github.com/pprettysimpple/buildpp), rewritten from scratch. Write `build.c`, include `bld.h`, implement `configure()`.
+Single-header build system for C. Write `build.c`, include `bld.h`, implement `configure()`.
 
 ```c
 #define BLD_IMPLEMENTATION
@@ -10,7 +10,7 @@ Single-header build system for C. Spiritual successor of [buildpp](https://githu
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
 void configure(Bld* b) {
-    bld_set_compiler_c(b, .standard = BLD_C_11);
+    set_compiler_c(b, .standard = BLD_C_11);
 
     Target* exe = add_exe(b, .name = "myapp",
         .sources = BLD_PATHS("main.c"));
@@ -22,17 +22,22 @@ cc -std=c11 -w build.c -o b -lpthread
 ./b build
 ```
 
-Uses content hashing, tracks header deps via `-MMD`, compiles in parallel, recompiles itself when `build.c` changes.
+Content hashing, header dep tracking (`-MMD`), parallel compilation, auto-recompilation of build.c.
 
-## Building bld itself
+See [docs/api.md](docs/api.md) for the full API reference.
+
+## Showcase
+
+Real-world build scripts for [curl](showcase/01_curl/build.c) and [libuv](showcase/02_libuv/build.c).
+
+To build them locally:
 
 ```
-cc -std=c11 -w build.c -o b -lpthread
-./b build
-./b amalgamate
-./b install --prefix /usr/local
+cd showcase/01_curl
+./fetch-source.sh                         # downloads source tarball
+cc -std=c11 -w build.c -o b -lpthread    # bootstrap
+./b build                                 # build curl
+./build/bin/curl --version                # verify
 ```
 
-## Disclaimer
-
-This codebase is largely AI-generated. I have no idea what consequences this may bring. You have been warned.
+Same steps for `showcase/02_libuv`.
