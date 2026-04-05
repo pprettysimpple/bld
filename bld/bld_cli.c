@@ -266,7 +266,11 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
     const char* cxx_env = getenv("CXX");
     const char* as_env  = getenv("AS");
     const char* cc     = cc_env  ? cc_env  : "cc";
+    if (!cc_env && !bld__has_in_path(cc) && bld__has_in_path("gcc"))
+        cc = "gcc";
     const char* cxx    = cxx_env ? cxx_env : "c++";
+    if (!cxx_env && !bld__has_in_path(cxx) && bld__has_in_path("g++"))
+        cxx = "g++";
     const char* as_drv = as_env  ? as_env  : cc;
     if (!bld__has_in_path(cc) && !cc_env)
         bld_panic("C compiler '%s' not found in PATH\n", cc);
