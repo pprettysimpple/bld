@@ -78,9 +78,9 @@ static void write_curl_config_h(Bld* b, bool has_ipv6,
         "#endif\n",
         os, os);
 
-    /* strerror_r fallback: if neither variant detected, assume POSIX */
+    /* strerror_r: curl requires one variant. if checks missed both, default to POSIX */
     fprintf(f,
-        "\n#if defined(HAVE_STRERROR_R) && !defined(HAVE_POSIX_STRERROR_R) && !defined(HAVE_GLIBC_STRERROR_R)\n"
+        "\n#if !defined(HAVE_POSIX_STRERROR_R) && !defined(HAVE_GLIBC_STRERROR_R)\n"
         "#define HAVE_POSIX_STRERROR_R 1\n"
         "#endif\n");
 
