@@ -139,6 +139,7 @@
 #define fs_list_files_r bld_fs_list_files_r
 #define fs_read_file    bld_fs_read_file
 #define fs_write_file   bld_fs_write_file
+#define fs_write_str    bld_fs_write_str
 #define files_glob      bld_files_glob
 #define files_exclude   bld_files_exclude
 #define files_merge     bld_files_merge

@@ -2,33 +2,43 @@
 
 > Single-header C build system. Write build.c, include bld.h, implement configure().
 
+## Get bld.h
+
+Download from the [latest release](https://github.com/nicro950/bld/releases/latest)
+and drop `bld.h` into your project directory. That's it — no install, no dependencies.
+
 ## Quick Start
 
-Every build script follows this pattern:
+**1. Create `build.c`:**
 
 ```c
-#define BLD_IMPLEMENTATION
-#define BLD_STRIP_PREFIX   // optional: use add_exe instead of bld_add_exe
+#define BLD_IMPLEMENTATION     // include the implementation (once per project)
+#define BLD_STRIP_PREFIX       // optional: write add_exe() instead of bld_add_exe()
 #include "bld.h"
 
-BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")  // -o is added automatically
+// how to recompile this build script (bld adds -o automatically)
+BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
 void configure(Bld* b) {
-    // define targets here
+    // define your targets here
 }
 ```
 
-Bootstrap and run:
+**2. Bootstrap** (compile build.c into the build tool):
 
-    cc -std=c11 -w build.c -o b -lpthread    # -o b only needed for bootstrap
+    cc -std=c11 -w build.c -o b -lpthread
+
+`-w` suppresses warnings inside bld.h. `-lpthread` is needed for parallel builds.
+You only run this once — after that, bld recompiles itself when build.c changes.
+
+**3. Build:**
+
     ./b build              # build and install all targets
     ./b test               # run registered tests
-    ./b build --prefix /usr/local  # custom install prefix
+    ./b build --release    # optimized build
     ./b build -v           # verbose: show compiler commands
     ./b build -Dfoo=on     # pass user option
     ./b --help             # list targets and options
-
-bld auto-recompiles itself when build.c changes.
 
 ## Targets
 

@@ -1,0 +1,22 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and install
+        run: |
+          cc -std=c11 -w build.c -o b -lpthread
+          ./b build --prefix dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/include/bld_amalgamated.h
+          generate_release_notes: true
