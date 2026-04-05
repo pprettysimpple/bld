@@ -78,6 +78,12 @@ static void write_curl_config_h(Bld* b, bool has_ipv6,
         "#endif\n",
         os, os);
 
+    /* strerror_r fallback: if neither variant detected, assume POSIX */
+    fprintf(f,
+        "\n#if defined(HAVE_STRERROR_R) && !defined(HAVE_POSIX_STRERROR_R) && !defined(HAVE_GLIBC_STRERROR_R)\n"
+        "#define HAVE_POSIX_STRERROR_R 1\n"
+        "#endif\n");
+
     /* CA bundle — from user option or detected */
     if (ca_bundle && ca_bundle[0])
         fprintf(f, "\n#define CURL_CA_BUNDLE \"%s\"\n", ca_bundle);
