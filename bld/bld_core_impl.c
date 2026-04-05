@@ -480,6 +480,11 @@ static void bld__fs_remove_all_impl(const char* path) {
 void bld_fs_remove_all(Bld_Path p) { bld__fs_remove_all_impl(p.s); }
 
 void bld_fs_rename(Bld_Path from, Bld_Path to) {
+    /* Windows rename() fails if dest exists; remove it first */
+    if (bld_fs_exists(to)) {
+        if (bld_fs_is_dir(to)) bld_fs_remove_all(to);
+        else unlink(to.s);
+    }
     if (rename(from.s, to.s) == 0) return;
     if (errno == EXDEV) {
         /* cross-filesystem: copy + delete */
