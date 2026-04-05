@@ -304,7 +304,8 @@ void configure(Bld* b) {
     /* Common compile flags                                                */
     /* ------------------------------------------------------------------ */
     Bld_Strs lib_defines = {0};
-    strs_push(&lib_defines, "HAVE_CONFIG_H");
+    if (b->toolchain->os != BLD_OS_WINDOWS)
+        strs_push(&lib_defines, "HAVE_CONFIG_H");  /* Windows: use curl's config-win32.h */
     strs_push(&lib_defines, "BUILDING_LIBCURL");
     strs_push(&lib_defines, "CURL_STATICLIB");
     /* Disable features we do not have headers for */
@@ -334,12 +335,18 @@ void configure(Bld* b) {
         "prj/lib/dllmain.c"         /* Windows DLL entry point */
     ));
 
-    /* System libraries for Linux */
+    /* System libraries */
     Bld_Strs sys_libs = {0};
-    strs_push(&sys_libs, "pthread");
-    if (b->toolchain->os == BLD_OS_LINUX) {
-        strs_push(&sys_libs, "dl");
-        strs_push(&sys_libs, "rt");
+    if (b->toolchain->os == BLD_OS_WINDOWS) {
+        strs_push(&sys_libs, "ws2_32");
+        strs_push(&sys_libs, "bcrypt");
+        strs_push(&sys_libs, "crypt32");
+    } else {
+        strs_push(&sys_libs, "pthread");
+        if (b->toolchain->os == BLD_OS_LINUX) {
+            strs_push(&sys_libs, "dl");
+            strs_push(&sys_libs, "rt");
+        }
     }
 
     Bld_Target* libcurl = add_lib(b,
@@ -391,7 +398,8 @@ void configure(Bld* b) {
     Bld_Paths all_exe_srcs = files_merge(exe_srcs, curlx_srcs);
 
     Bld_Strs exe_defines = {0};
-    strs_push(&exe_defines, "HAVE_CONFIG_H");
+    if (b->toolchain->os != BLD_OS_WINDOWS)
+        strs_push(&exe_defines, "HAVE_CONFIG_H");
     strs_push(&exe_defines, "CURL_STATICLIB");
 
     if (dep_ssl && dep_ssl->found)
