@@ -1,5 +1,5 @@
 #!/bin/sh
-# fetch-source.sh — download libuv 1.50.0 source
+# fetch-source.sh — download libuv 1.50.0 source into prj/
 set -eu
 
 VERSION="1.50.0"
@@ -9,8 +9,8 @@ SRCDIR="libuv-v${VERSION}"
 
 cd "$(dirname "$0")"
 
-if [ -d "src" ]; then
-    echo "Source already fetched (src/ exists), skipping download."
+if [ -d "prj/src" ]; then
+    echo "Source already fetched (prj/src/ exists), skipping download."
     exit 0
 fi
 
@@ -20,12 +20,13 @@ curl -LO "${URL}"
 echo "Extracting..."
 tar xzf "${TARBALL}"
 
-mv "${SRCDIR}/src" .
-mv "${SRCDIR}/include" .
-mv "${SRCDIR}/test" .
-mv "${SRCDIR}/README.md" .
+mkdir -p prj
+mv "${SRCDIR}/src" prj/
+mv "${SRCDIR}/include" prj/
+mv "${SRCDIR}/test" prj/
+mv "${SRCDIR}/README.md" prj/
 
 rm -rf "${SRCDIR}" "${TARBALL}"
-echo "Done. Sources in src/, headers in include/"
+echo "Done. Sources in prj/{src,include,test}/"
 echo ""
 echo "To build:  cc -std=c11 -w build.c -o b -lpthread && ./b build"
