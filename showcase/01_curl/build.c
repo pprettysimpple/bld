@@ -109,19 +109,8 @@ void configure(Bld* b) {
     /* ------------------------------------------------------------------ */
     /* External dependencies (pkg-config)                                  */
     /* ------------------------------------------------------------------ */
-    Bld_Dep* dep_ssl  = NULL;
-    Bld_Dep* dep_zlib = NULL;
-
-    if (use_ssl) {
-        dep_ssl = find_pkg("openssl");
-        if (!dep_ssl->found)
-            bld_log_info("[!] openssl not found via pkg-config -- building without SSL\n");
-    }
-    if (use_zlib) {
-        dep_zlib = find_pkg("zlib");
-        if (!dep_zlib->found)
-            bld_log_info("[!] zlib not found via pkg-config -- building without compression\n");
-    }
+    Bld_Dep* dep_ssl  = use_ssl  ? find_pkg("openssl") : NULL;
+    Bld_Dep* dep_zlib = use_zlib ? find_pkg("zlib")    : NULL;
 
     /* ------------------------------------------------------------------ */
     /* Feature detection                                                   */
@@ -358,7 +347,7 @@ void configure(Bld* b) {
             .libs = sys_libs,
         });
 
-    /* Apply external deps to the library */
+    /* Apply external deps (only if found — these are optional) */
     if (dep_ssl  && dep_ssl->found)  use_dep(libcurl, dep_ssl);
     if (dep_zlib && dep_zlib->found) use_dep(libcurl, dep_zlib);
 
