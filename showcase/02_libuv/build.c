@@ -41,69 +41,22 @@ void configure(Bld* b) {
 
     Bld_Paths srcs = files_glob("prj/src/**/*.c");
 
-    srcs = files_exclude(srcs, BLD_PATHS(
-        /* --- Windows backend (entire directory) --- */
-        "prj/src/win",
-
-        /* --- Other Unix platform backends ---
-         * Each of these files implements OS-specific functionality for a
-         * non-Linux platform. On Linux, the equivalent code lives in
-         * linux.c, procfs-exepath.c, proctitle.c, etc.
-         */
-        "*aix*",               /* AIX */
-        "*darwin*",            /* macOS / Darwin */
-        "*freebsd*",           /* FreeBSD */
-        "*netbsd*",            /* NetBSD */
-        "*openbsd*",           /* OpenBSD */
-        "*sunos*",             /* Solaris / illumos */
-        "*haiku*",             /* Haiku OS */
-        "*hurd*",              /* GNU Hurd */
-        "*cygwin*",            /* Cygwin (Windows POSIX layer) */
-        "*qnx*",               /* QNX RTOS */
-        "*ibmi*",              /* IBM i (AS/400) */
-        "*os390*",             /* z/OS (IBM mainframe) */
-
-        /* --- BSD-specific subsystems ---
-         * kqueue.c: BSD/macOS event loop backend (Linux uses epoll)
-         * bsd-ifaddrs.c: BSD getifaddrs implementation
-         * bsd-proctitle.c: BSD setproctitle implementation
-         */
-        "*kqueue*",
-        "*bsd-ifaddrs*",
-        "*bsd-proctitle*",
-
-        /* --- macOS FSEvents ---
-         * fsevents.c: macOS FSEvents file watcher
-         * no-fsevents.c: stub for non-macOS platforms that still use kqueue
-         *   (Linux uses inotify via linux.c, not this stub)
-         */
-        "*fsevents*",
-        "*no-fsevents*",
-
-        /* --- Stubs for platforms lacking proctitle ---
-         * no-proctitle.c: stub for platforms without setproctitle
-         *   (Linux has its own implementation in proctitle.c)
-         */
-        "*no-proctitle*",
-
-        /* --- Portable fallbacks not used on Linux ---
-         * posix-poll.c: portable poll() fallback (Linux uses epoll)
-         * posix-hrtime.c: portable clock_gettime fallback
-         *   (Linux has optimized implementation in linux.c)
-         */
-        "*posix-poll*",
-        "*posix-hrtime*",
-
-        /* --- Random number fallbacks ---
-         * random-getentropy.c: BSD/macOS getentropy() call
-         *   (Linux uses getrandom() via random-getrandom.c, with
-         *    /dev/urandom fallback via random-devurandom.c, and the
-         *    sysctl fallback via random-sysctl-linux.c)
-         * NOTE: random-devurandom.c IS included — random.c calls it
-         *   as a fallback when getrandom() returns ENOSYS on older kernels.
-         */
-        "*random-getentropy*"
-    ));
+    if (b->toolchain->os == BLD_OS_WINDOWS) {
+        /* Windows: use win/ backend, exclude unix/ */
+        srcs = files_exclude(srcs, BLD_PATHS("prj/src/unix"));
+    } else {
+        /* Unix: use unix/ backend, exclude win/ and non-Linux platforms */
+        srcs = files_exclude(srcs, BLD_PATHS(
+            "prj/src/win",
+            "*aix*", "*darwin*", "*freebsd*", "*netbsd*", "*openbsd*",
+            "*sunos*", "*haiku*", "*hurd*", "*cygwin*", "*qnx*",
+            "*ibmi*", "*os390*",
+            "*kqueue*", "*bsd-ifaddrs*", "*bsd-proctitle*",
+            "*fsevents*", "*no-fsevents*", "*no-proctitle*",
+            "*posix-poll*", "*posix-hrtime*",
+            "*random-getentropy*"
+        ));
+    }
 
     /* ------------------------------------------------------------------ */
     /*  Compile flags                                                      */
@@ -111,24 +64,14 @@ void configure(Bld* b) {
 
     Bld_CompileFlags cflags = default_compile_flags(b);
 
-    cflags.defines = BLD_STRS(
-        /* Required for full POSIX + GNU API surface.
-         * libuv uses pipe2(), accept4(), epoll_create1(), etc. */
-        "_GNU_SOURCE",
-
-        /* POSIX.1-2001 baseline — ensures sigaction, pselect, etc. */
-        "_POSIX_C_SOURCE=200112",
-
-        /* Large file support — required for stat64/off_t on 32-bit */
-        "_FILE_OFFSET_BITS=64"
-    );
-
-    /* Private include dirs — needed to compile libuv sources */
-    cflags.include_dirs = BLD_PATHS(
-        "prj/include",     /* public headers (uv.h, uv/*.h) */
-        "prj/src",         /* private headers (uv-common.h, etc.) */
-        "prj/src/unix"     /* private unix headers (internal.h, etc.) */
-    );
+    if (b->toolchain->os == BLD_OS_WINDOWS) {
+        cflags.defines = BLD_STRS("WIN32_LEAN_AND_MEAN", "_WIN32_WINNT=0x0A00");
+        cflags.include_dirs = BLD_PATHS("prj/include", "prj/src");
+    } else {
+        cflags.defines = BLD_STRS("_GNU_SOURCE", "_POSIX_C_SOURCE=200112",
+                                  "_FILE_OFFSET_BITS=64");
+        cflags.include_dirs = BLD_PATHS("prj/include", "prj/src", "prj/src/unix");
+    }
 
     /* ------------------------------------------------------------------ */
     /*  Static library target                                              */
@@ -152,7 +95,9 @@ void configure(Bld* b) {
          * - dl: dlopen/dlsym for shared library loading
          * - rt: clock_gettime, timer_create (older glibc) */
         .link_pub = {
-            .libs = BLD_STRS("pthread", "dl", "rt")
+            .libs = (b->toolchain->os == BLD_OS_WINDOWS)
+                ? BLD_STRS("ws2_32", "iphlpapi", "userenv", "psapi", "dbghelp", "ole32", "shell32")
+                : BLD_STRS("pthread", "dl", "rt")
         }
     );
 
@@ -172,7 +117,8 @@ void configure(Bld* b) {
     /*  process isolation and timeout handling.                             */
     /* ------------------------------------------------------------------ */
 
-    bool build_tests = option_bool(b, "tests", "Build and register test runner", true);
+    bool build_tests = option_bool(b, "tests", "Build and register test runner",
+        b->toolchain->os != BLD_OS_WINDOWS);  /* tests use runner-unix.c, skip on Windows */
 
     if (build_tests) {
         /* Glob all test sources, exclude Windows runner and benchmarks */
