@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  linux-clang:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build bld
+        run: clang -std=c11 -w build.c -o b -lpthread && ./b amalgamate
+
+      - name: Showcase curl
+        run: |
+          cd showcase/01_curl && ./fetch-source.sh
+          clang -std=c11 -w build.c -o b -lpthread && ./b build -j4
+          ./build/bin/curl --version
+
+      - name: Showcase libuv
+        run: |
+          cd showcase/02_libuv && ./fetch-source.sh
+          clang -std=c11 -w build.c -o b -lpthread && ./b build -j4
+
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile with MSVC
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          echo #define BLD_IMPLEMENTATION > _ci_test.c
+          echo #include "bld.h" >> _ci_test.c
+          cl /std:c11 /W0 /c /I. _ci_test.c
