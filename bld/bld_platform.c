@@ -238,10 +238,9 @@ static Bld_ProcResult bld_plat_run(const char* cmd, const char* workdir, int fla
         si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
     }
 
-    /* wrap in cmd /c for shell interpretation */
-    const char* full_cmd = bld_str_fmt("cmd /c %s", cmd);
-    char* mut_cmd = bld_arena_alloc(strlen(full_cmd) + 1);
-    strcpy(mut_cmd, full_cmd);
+    /* pass command directly to CreateProcess — no shell needed for compiler commands */
+    char* mut_cmd = bld_arena_alloc(strlen(cmd) + 1);
+    strcpy(mut_cmd, cmd);
 
     PROCESS_INFORMATION pi;
     memset(&pi, 0, sizeof(pi));

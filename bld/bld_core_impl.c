@@ -913,11 +913,9 @@ static void bld__gcc_render_compile(Bld_Cmd* cmd, Bld_CompileCmd c) {
     /* extra compile flags (from CompileFlags.extra_flags) */
     if (c.extra_flags && c.extra_flags[0]) bld_cmd_appendf(cmd, " %s", c.extra_flags);
 
-    /* defines */
-    for (size_t i = 0; i < c.defines.count; i++) {
-        bld_cmd_appendf(cmd, " -D");
-        bld_cmd_append_sq(cmd, c.defines.items[i]);
-    }
+    /* defines — no shell quoting, identifiers don't need it */
+    for (size_t i = 0; i < c.defines.count; i++)
+        bld_cmd_appendf(cmd, " -D%s", c.defines.items[i]);
 
     /* include dirs from CompileFlags */
     for (size_t i = 0; i < c.include_dirs.count; i++)
