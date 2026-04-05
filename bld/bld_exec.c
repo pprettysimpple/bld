@@ -108,19 +108,25 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
 
 typedef struct {
     Bld* b; Bld_Step** order; size_t count; pthread_mutex_t* mu; size_t* idx;
+    int* stop;  /* set to 1 on first failure (fast-fail) */
 } Bld__WorkerCtx;
 
 static void* bld__worker_fn(void* arg) {
     Bld__WorkerCtx* c = arg;
     while (1) {
         pthread_mutex_lock(c->mu);
-        if (*c->idx >= c->count) { pthread_mutex_unlock(c->mu); break; }
+        if (*c->idx >= c->count || (*c->stop && !c->b->settings.keep_going)) {
+            pthread_mutex_unlock(c->mu);
+            break;
+        }
         Bld_Step* step = c->order[(*c->idx)++];
         pthread_mutex_unlock(c->mu);
         for (size_t i = 0; i < step->deps.count; i++) bld__step_wait(step->deps.items[i]);
         for (size_t i = 0; i < step->inputs.count; i++)
             if (step->inputs.items[i]) bld__step_wait(step->inputs.items[i]);
         bld__perform_step(c->b, step);
+        if (step->state == BLD_STEP_FAILED)
+            __atomic_store_n(c->stop, 1, __ATOMIC_RELAXED);
     }
     return NULL;
 }
@@ -224,11 +230,16 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
     /* execute */
     pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
     size_t idx = 0;
+    int stop = 0;
     if (b->settings.max_jobs <= 1) {
-        for (size_t i = 0; i < order.count; i++) bld__perform_step(b, order.items[i]);
+        for (size_t i = 0; i < order.count; i++) {
+            bld__perform_step(b, order.items[i]);
+            if (order.items[i]->state == BLD_STEP_FAILED && !b->settings.keep_going)
+                break;
+        }
     } else {
         pthread_t* th = bld_arena_alloc(sizeof(pthread_t) * (size_t)b->settings.max_jobs);
-        Bld__WorkerCtx ctx = {b, order.items, order.count, &mu, &idx};
+        Bld__WorkerCtx ctx = {b, order.items, order.count, &mu, &idx, &stop};
         Bld__WorkerCtx* shared = bld_arena_alloc(sizeof(Bld__WorkerCtx));
         *shared = ctx;
         for (int t = 0; t < b->settings.max_jobs; t++) pthread_create(&th[t], NULL, bld__worker_fn, shared);
