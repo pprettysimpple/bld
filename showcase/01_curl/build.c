@@ -20,8 +20,6 @@
 #define BLD_STRIP_PREFIX
 #include "../../bld.h"
 
-#include <sys/stat.h>
-
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
 static const char* os_name(Bld_OsTarget os) {
@@ -36,7 +34,7 @@ static const char* os_name(Bld_OsTarget os) {
 
 static void write_curl_config_h(Bld* b, bool has_ipv6,
                                 const char* ca_bundle, const char* ca_path) {
-    mkdir("generated", 0755);
+    bld_fs_mkdir_p(bld_filepath("generated"));
     FILE* f = fopen("generated/curl_config.h", "w");
     if (!f) {
         bld_log_info("[!] failed to create generated/curl_config.h\n");
@@ -296,7 +294,7 @@ void configure(Bld* b) {
 
     /* Run all checks in parallel, write results */
     checks_run(chk);
-    mkdir("generated", 0755);
+    bld_fs_mkdir_p(bld_filepath("generated"));
     checks_write(chk, "generated/curl_checks.h");
 
     /* Generate curl_config.h (wraps curl_checks.h with extra platform defines) */
