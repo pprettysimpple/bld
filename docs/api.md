@@ -370,7 +370,7 @@ static Bld_ActionResult my_codegen(void* ctx, Bld_Path output, Bld_Path depfile)
     // generate code, write to output directory
     bld_fs_mkdir_p(output);
     const char* code = "#include <stdio.h>\nint gen(void){return 42;}\n";
-    bld_fs_write_file(bld_path_join(output, bld_filepath("gen.c")), code, strlen(code));
+    bld_fs_write_str(bld_path_join(output, bld_filepath("gen.c")), code);
     return BLD_ACTION_OK;  // or BLD_ACTION_FAILED on error
 }
 
@@ -437,6 +437,7 @@ bld_fs_remove_all(path)              // recursive remove
 bld_fs_rename(from, to)
 bld_fs_read_file(path, &len)         // returns arena-allocated content
 bld_fs_write_file(path, data, len)
+bld_fs_write_str(path, str)          // write null-terminated string (calls strlen for you)
 bld_fs_realpath(path)
 bld_fs_getcwd()
 ```

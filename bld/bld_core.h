@@ -155,6 +155,7 @@ Bld_PathList bld_fs_list_files_r(Bld_Path dir);
 
 const char* bld_fs_read_file(Bld_Path p, size_t* out_len);
 void        bld_fs_write_file(Bld_Path p, const char* data, size_t len);
+static inline void bld_fs_write_str(Bld_Path p, const char* s) { bld_fs_write_file(p, s, strlen(s)); }
 
 /* glob: returns Bld_Paths with sized .items */
 Bld_Paths bld_files_glob(const char* pattern);
