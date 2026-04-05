@@ -44,8 +44,8 @@
   #define chdir   _chdir
   #define rmdir   _rmdir
   #define chmod(p,m) ((void)0) /* no-op on Windows */
-  #define O_RDONLY _O_RDONLY
-  #define O_WRONLY _O_WRONLY
+  #define O_RDONLY (_O_RDONLY | _O_BINARY)
+  #define O_WRONLY (_O_WRONLY | _O_BINARY)
   #define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
   #define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
   #ifndef EXDEV
