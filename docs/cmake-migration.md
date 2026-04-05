@@ -2,6 +2,9 @@
 
 > You know CMake. Here's how to do the same things in bld.
 
+All examples below use `BLD_STRIP_PREFIX` — so `add_exe()` instead of `bld_add_exe()`,
+`BLD_PATHS()` instead of `BLD_PATHS()`, etc. Without it, add `bld_` prefix to all functions.
+
 ## 1. Project Setup
 
 **CMake:**
@@ -13,12 +16,13 @@ project(myapp C)
 **bld:**
 ```c
 #define BLD_IMPLEMENTATION
+#define BLD_STRIP_PREFIX
 #include "bld.h"
 
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
 void configure(Bld* b) {
-    bld_set_compiler_c(b, .standard = BLD_C_11);
+    set_compiler_c(b, .standard = BLD_C_11);
     // targets go here
 }
 ```
@@ -36,7 +40,7 @@ add_executable(myapp src/main.c src/util.c)
 
 **bld:**
 ```c
-Bld_Target* app = bld_add_exe(b,
+Bld_Target* app = add_exe(b,
     .name    = "myapp",
     .sources = BLD_PATHS("src/main.c", "src/util.c"));
 ```
@@ -50,7 +54,7 @@ set_target_properties(myapp PROPERTIES OUTPUT_NAME "my-tool")
 
 **bld:**
 ```c
-Bld_Target* app = bld_add_exe(b,
+Bld_Target* app = add_exe(b,
     .name        = "myapp",
     .output_name = "my-tool",
     .sources     = BLD_PATHS("src/main.c"));
@@ -66,8 +70,8 @@ add_executable(server src/server.c)
 
 **bld:**
 ```c
-Bld_Target* client = bld_add_exe(b, .name = "client", .sources = BLD_PATHS("src/client.c"));
-Bld_Target* server = bld_add_exe(b, .name = "server", .sources = BLD_PATHS("src/server.c"));
+Bld_Target* client = add_exe(b, .name = "client", .sources = BLD_PATHS("src/client.c"));
+Bld_Target* server = add_exe(b, .name = "server", .sources = BLD_PATHS("src/server.c"));
 ```
 
 ---
@@ -83,7 +87,7 @@ add_library(mylib STATIC src/foo.c src/bar.c)
 
 **bld:**
 ```c
-Bld_Target* lib = bld_add_lib(b,
+Bld_Target* lib = add_lib(b,
     .name    = "mylib",
     .sources = BLD_PATHS("src/foo.c", "src/bar.c"));
 ```
@@ -97,7 +101,7 @@ add_library(mylib SHARED src/foo.c src/bar.c)
 
 **bld:**
 ```c
-Bld_Target* lib = bld_add_lib(b,
+Bld_Target* lib = add_lib(b,
     .name    = "mylib",
     .shared  = true,
     .sources = BLD_PATHS("src/foo.c", "src/bar.c"));
@@ -113,7 +117,7 @@ target_include_directories(mylib PUBLIC include)
 
 **bld:**
 ```c
-Bld_Target* lib = bld_add_lib(b,
+Bld_Target* lib = add_lib(b,
     .name        = "mylib",
     .sources     = BLD_PATHS("src/foo.c"),
     .compile_pub = { .include_dirs = BLD_PATHS("include") });
@@ -134,7 +138,7 @@ add_executable(app ${SRCS})
 **bld:**
 ```c
 Bld_Paths srcs = BLD_PATHS("src/main.c", "src/util.c", "src/net.c");
-Bld_Target* app = bld_add_exe(b, .name = "app", .sources = srcs);
+Bld_Target* app = add_exe(b, .name = "app", .sources = srcs);
 ```
 
 ### Glob
@@ -146,7 +150,7 @@ file(GLOB SRCS src/*.c)
 
 **bld:**
 ```c
-Bld_Paths srcs = bld_files_glob("src/*.c");
+Bld_Paths srcs = files_glob("src/*.c");
 ```
 
 ### Recursive glob
@@ -158,7 +162,7 @@ file(GLOB_RECURSE SRCS src/**/*.c)
 
 **bld:**
 ```c
-Bld_Paths srcs = bld_files_glob("src/**/*.c");
+Bld_Paths srcs = files_glob("src/**/*.c");
 ```
 
 ### Exclude files
@@ -171,8 +175,8 @@ list(REMOVE_ITEM SRCS src/test_main.c)
 
 **bld:**
 ```c
-Bld_Paths srcs = bld_files_glob("src/*.c");
-srcs = bld_files_exclude(srcs, BLD_PATHS("src/test_main.c"));
+Bld_Paths srcs = files_glob("src/*.c");
+srcs = files_exclude(srcs, BLD_PATHS("src/test_main.c"));
 ```
 
 ### Exclude by pattern
@@ -185,8 +189,8 @@ list(FILTER SRCS EXCLUDE REGEX ".*_test\\.c$")
 
 **bld:**
 ```c
-Bld_Paths srcs = bld_files_glob("src/*.c");
-srcs = bld_files_exclude(srcs, BLD_PATHS("*_test.c"));
+Bld_Paths srcs = files_glob("src/*.c");
+srcs = files_exclude(srcs, BLD_PATHS("*_test.c"));
 ```
 
 ### Conditional sources
@@ -203,9 +207,9 @@ endif()
 **bld:**
 ```c
 if (b->toolchain->os == BLD_OS_WINDOWS)
-    bld_paths_push(&srcs, "src/platform_win.c");
+    paths_push(&srcs, "src/platform_win.c");
 else
-    bld_paths_push(&srcs, "src/platform_unix.c");
+    paths_push(&srcs, "src/platform_unix.c");
 ```
 
 ### Merge source lists
@@ -217,7 +221,7 @@ set(ALL_SRCS ${LIB_SRCS} ${EXTRA_SRCS})
 
 **bld:**
 ```c
-Bld_Paths all = bld_paths_merge(lib_srcs, extra_srcs);
+Bld_Paths all = paths_merge(lib_srcs, extra_srcs);
 ```
 
 ---
@@ -233,7 +237,7 @@ target_compile_definitions(mylib PRIVATE FOO BAR=1)
 
 **bld:**
 ```c
-Bld_Target* lib = bld_add_lib(b,
+Bld_Target* lib = add_lib(b,
     .name    = "mylib",
     .sources = srcs,
     .compile = { .defines = BLD_STRS("FOO", "BAR=1") });
@@ -248,7 +252,7 @@ target_compile_definitions(mylib PUBLIC MYLIB_STATIC)
 
 **bld:**
 ```c
-Bld_Target* lib = bld_add_lib(b,
+Bld_Target* lib = add_lib(b,
     .name        = "mylib",
     .sources     = srcs,
     .compile_pub = { .defines = BLD_STRS("MYLIB_STATIC") });
@@ -278,7 +282,7 @@ endif()
 **bld:**
 ```c
 Bld_Strs defs = {0};
-if (use_ssl) bld_strs_push(&defs, "USE_SSL");
+if (use_ssl) strs_push(&defs, "USE_SSL");
 // ... use defs in .compile = { .defines = defs }
 ```
 
@@ -291,7 +295,7 @@ target_compile_definitions(app PRIVATE VERSION="1.0")
 
 **bld** — use a generated header instead (cross-platform safe):
 ```c
-bld_fs_write_str(bld_filepath("generated/version.h"),
+fs_write_str(bld_filepath("generated/version.h"),
     "#define VERSION \"1.0\"\n");
 // add "generated" to include_dirs, add HAVE_VERSION_H to defines
 ```
@@ -349,7 +353,7 @@ set(CMAKE_C_STANDARD 11)
 
 **bld:**
 ```c
-bld_set_compiler_c(b, .standard = BLD_C_11);
+set_compiler_c(b, .standard = BLD_C_11);
 // GNU extensions: BLD_C_GNU11
 ```
 
@@ -362,7 +366,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 **bld:**
 ```c
-bld_set_compiler_cxx(b, .standard = BLD_CXX_17);
+set_compiler_cxx(b, .standard = BLD_CXX_17);
 ```
 
 ### Optimization
@@ -410,8 +414,8 @@ set_source_files_properties(vendor/noisy.c PROPERTIES COMPILE_FLAGS -w)
 
 **bld:**
 ```c
-bld_override_file(lib, "vendor/noisy.c", .warnings = BLD_OFF);
-bld_override_file(lib, "hot_path.c", .optimize = BLD_OPT_O3);
+override_file(lib, "vendor/noisy.c", .warnings = BLD_OFF);
+override_file(lib, "hot_path.c", .optimize = BLD_OPT_O3);
 ```
 
 ---
@@ -427,7 +431,7 @@ target_link_libraries(app PRIVATE mylib)
 
 **bld:**
 ```c
-bld_link_with(app, lib);
+link_with(app, lib);
 ```
 
 ### External library (pkg-config)
@@ -442,8 +446,8 @@ target_include_directories(app PRIVATE ${SSL_INCLUDE_DIRS})
 
 **bld:**
 ```c
-Bld_Target* ssl = bld_find_pkg(b, "openssl");
-if (ssl->found) bld_link_with(app, ssl);
+Bld_Target* ssl = find_pkg(b, "openssl");
+if (ssl->found) link_with(app, ssl);
 ```
 
 ### Manual external dependency
@@ -457,12 +461,12 @@ target_link_libraries(app PRIVATE mylib)
 
 **bld:**
 ```c
-Bld_Target* dep = bld_pkg(b,
+Bld_Target* dep = pkg(b,
     .name         = "mylib",
     .include_dirs = BLD_PATHS("/opt/mylib/include"),
     .libs         = BLD_STRS("mylib"),
     .lib_dirs     = BLD_PATHS("/opt/mylib/lib"));
-bld_link_with(app, dep);
+link_with(app, dep);
 ```
 
 ### System libraries
@@ -515,7 +519,7 @@ target_link_libraries(app PRIVATE OpenSSL::SSL)
 
 **bld:**
 ```c
-bld_link_with(app, bld_find_pkg(b, "openssl"));
+link_with(app, find_pkg(b, "openssl"));
 // panics with clear error if not found
 ```
 
@@ -532,10 +536,10 @@ endif()
 
 **bld:**
 ```c
-Bld_Target* zlib = bld_find_pkg(b, "zlib");
+Bld_Target* zlib = find_pkg(b, "zlib");
 if (zlib->found) {
-    bld_link_with(app, zlib);
-    bld_strs_push(&defs, "HAVE_ZLIB");
+    link_with(app, zlib);
+    strs_push(&defs, "HAVE_ZLIB");
 }
 ```
 
@@ -553,8 +557,8 @@ check_include_file(unistd.h HAVE_UNISTD_H)
 
 **bld:**
 ```c
-Bld_Checks* chk = bld_checks_new(b);
-bld_checks_header(chk, "HAVE_UNISTD_H", "unistd.h");
+Bld_Checks* chk = checks_new(b);
+checks_header(chk, "HAVE_UNISTD_H", "unistd.h");
 ```
 
 ### Check function
@@ -567,7 +571,7 @@ check_function_exists(strlcpy HAVE_STRLCPY)
 
 **bld:**
 ```c
-bld_checks_func(chk, "HAVE_STRLCPY", "strlcpy", "string.h");
+checks_func(chk, "HAVE_STRLCPY", "strlcpy", "string.h");
 ```
 
 ### Check type size
@@ -580,7 +584,7 @@ check_type_size("long" SIZEOF_LONG)
 
 **bld:**
 ```c
-int* sz = bld_checks_sizeof(chk, "SIZEOF_LONG", "long");
+int* sz = checks_sizeof(chk, "SIZEOF_LONG", "long");
 ```
 
 ### Check source compiles
@@ -596,7 +600,7 @@ check_c_source_compiles("
 
 **bld:**
 ```c
-bld_checks_compile(chk, "HAVE_ATOMIC",
+checks_compile(chk, "HAVE_ATOMIC",
     "#include <stdatomic.h>\n"
     "int main() { _Atomic int x = 0; return x; }");
 ```
@@ -610,8 +614,8 @@ configure_file(config.h.in config.h)
 
 **bld:**
 ```c
-bld_checks_run(chk);
-bld_checks_write(chk, "generated/config.h");
+checks_run(chk);
+checks_write(chk, "generated/config.h");
 // produces:
 //   #define HAVE_UNISTD_H 1
 //   /* HAVE_STRLCPY not found */
@@ -629,8 +633,8 @@ endif()
 
 **bld:**
 ```c
-bool* has_unistd = bld_checks_header(chk, "HAVE_UNISTD_H", "unistd.h");
-bld_checks_run(chk);
+bool* has_unistd = checks_header(chk, "HAVE_UNISTD_H", "unistd.h");
+checks_run(chk);
 if (*has_unistd) {
     // ...
 }
@@ -649,7 +653,7 @@ install(TARGETS myapp DESTINATION bin)
 
 **bld:**
 ```c
-bld_install_exe(b, app);   // → <prefix>/bin/myapp
+install_exe(b, app);   // → <prefix>/bin/myapp
 ```
 
 ### Install library
@@ -661,7 +665,7 @@ install(TARGETS mylib DESTINATION lib)
 
 **bld:**
 ```c
-bld_install_lib(b, lib);   // → <prefix>/lib/libmylib.a
+install_lib(b, lib);   // → <prefix>/lib/libmylib.a
 ```
 
 ### Install headers
@@ -673,7 +677,7 @@ install(FILES include/mylib.h DESTINATION include)
 
 **bld:**
 ```c
-bld_install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
+install_files(b, BLD_PATHS("include/mylib.h"), bld_filepath("include"));
 ```
 
 ### Install directory
@@ -685,7 +689,7 @@ install(DIRECTORY include/mylib DESTINATION include)
 
 **bld:**
 ```c
-bld_install_dir(b, "include/mylib", bld_filepath("include/mylib"));
+install_dir(b, "include/mylib", bld_filepath("include/mylib"));
 ```
 
 ### Custom prefix
@@ -727,7 +731,7 @@ option(USE_SSL "Enable SSL support" ON)
 
 **bld:**
 ```c
-bool use_ssl = bld_option_bool(b, "ssl", "Enable SSL support", true);
+bool use_ssl = option_bool(b, "ssl", "Enable SSL support", true);
 ```
 
 **CMake:**
@@ -737,7 +741,7 @@ set(BACKEND "openssl" CACHE STRING "TLS backend")
 
 **bld:**
 ```c
-const char* backend = bld_option_str(b, "backend", "TLS backend", "openssl");
+const char* backend = option_str(b, "backend", "TLS backend", "openssl");
 ```
 
 ### Passing options
@@ -768,9 +772,9 @@ add_test(NAME unit-tests COMMAND test_runner)
 
 **bld:**
 ```c
-Bld_Target* test_exe = bld_add_exe(b,
+Bld_Target* test_exe = add_exe(b,
     .name = "test-runner", .sources = BLD_PATHS("tests/main.c"));
-bld_add_test(b, test_exe, .name = "unit-tests");
+add_test(b, test_exe, .name = "unit-tests");
 ```
 
 ### Test with arguments
@@ -782,7 +786,7 @@ add_test(NAME smoke COMMAND test_runner --self-test)
 
 **bld:**
 ```c
-bld_add_test(b, test_exe,
+add_test(b, test_exe,
     .name = "smoke",
     .args = BLD_STRS("--self-test"));
 ```
@@ -812,8 +816,8 @@ configure_file(config.h.in ${CMAKE_BINARY_DIR}/config.h)
 
 **bld** — write directly in C:
 ```c
-bld_fs_write_str(bld_filepath("generated/config.h"),
-    bld_str_fmt("#define VERSION \"%s\"\n"
+fs_write_str(bld_filepath("generated/config.h"),
+    str_fmt("#define VERSION \"%s\"\n"
                 "#define BUILD_DATE \"%s\"\n",
                 version, __DATE__));
 ```
@@ -830,7 +834,7 @@ add_custom_command(
 
 **bld:**
 ```c
-Bld_Target* gen = bld_add_cmd(b,
+Bld_Target* gen = add_cmd(b,
     .name  = "codegen",
     .cmd   = "python3 codegen.py -o generated/gen.c",
     .watch = BLD_PATHS("codegen.py", "schema.json"));
@@ -846,9 +850,9 @@ add_dependencies(app codegen)
 
 **bld:**
 ```c
-Bld_Target* app = bld_add_exe(b, .name = "app", .sources = BLD_PATHS("main.c"));
-bld_add_source(app, bld_output_sub(gen, "gen.c"));
-bld_add_include_dir(app, bld_output(gen));
+Bld_Target* app = add_exe(b, .name = "app", .sources = BLD_PATHS("main.c"));
+target_add_source(app, target_output_sub(gen, "gen.c"));
+target_add_include_dir(app, target_output(gen));
 ```
 
 ### Custom step with C action
@@ -864,13 +868,13 @@ add_custom_command(OUTPUT gen.c
 ```c
 static Bld_ActionResult my_gen(void* ctx, Bld_Path output, Bld_Path depfile) {
     (void)depfile;
-    bld_fs_mkdir_p(output);
-    bld_fs_write_str(bld_path_join(output, bld_filepath("gen.c")),
+    fs_mkdir_p(output);
+    fs_write_str(bld_path_join(output, bld_filepath("gen.c")),
         "#include <stdio.h>\nint gen(void){return 42;}\n");
     return BLD_ACTION_OK;
 }
 
-Bld_Target* gen = bld_add_step(b,
+Bld_Target* gen = add_step(b,
     .name   = "codegen",
     .action = my_gen,
     .watch  = BLD_PATHS("schema.json"));
@@ -930,7 +934,7 @@ set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
 **bld:**
 ```c
 void configure(Bld* b) {
-    bld_set_compiler_c(b, .driver = "aarch64-linux-gnu-gcc", .standard = BLD_C_11);
+    set_compiler_c(b, .driver = "aarch64-linux-gnu-gcc", .standard = BLD_C_11);
     // toolchain auto-detected from compiler's -dumpmachine
 }
 ```
