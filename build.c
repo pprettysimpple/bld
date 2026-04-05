@@ -38,10 +38,7 @@ static void amalg_file(Bld_Strs* out, Bld_Path root, const char* relpath) {
     for (size_t i = 0; i < lines.count; i++) {
         if (strcmp(lines.items[i], "#pragma once") == 0) continue;
         if (strncmp(lines.items[i], "#include \"bld_", 14) == 0) continue;
-        if (strncmp(lines.items[i], "#include \"xxhash.h\"", 19) == 0) {
-            amalg_file(out, root, "bld/xxhash.h");
-            continue;
-        }
+        if (strncmp(lines.items[i], "#include \"xxhash.h\"", 19) == 0) continue;
         bld_strs_push(out, lines.items[i]);
     }
 }
@@ -121,7 +118,7 @@ void configure(Bld* b) {
         "bld/bld_core_impl.c", "bld/bld_cache.h", "bld/bld_cache.c",
         "bld/bld_dep.h", "bld/bld_dep.c",
         "bld/bld_build.c", "bld/bld_checks.h", "bld/bld_checks.c",
-        "bld/bld_exec.c", "bld/bld_cli.c", "bld/xxhash.h");
+        "bld/bld_exec.c", "bld/bld_cli.c");
 
     Target* unity = add_step(b,
         .name = "unity",

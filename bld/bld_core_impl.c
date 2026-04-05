@@ -3,8 +3,16 @@
 
 #include "bld_core.h"
 
-#define XXH_INLINE_ALL
-#include "xxhash.h"
+/* FNV-1a 64-bit hash — simple, good distribution, no dependencies */
+static uint64_t bld__fnv1a(const void* data, size_t len) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    const uint8_t* p = data;
+    for (size_t i = 0; i < len; i++) {
+        h ^= p[i];
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
 
 /* ================================================================
  *  Arena
@@ -370,7 +378,7 @@ void bld_cmd_append_sq(Bld_Cmd* cmd, const char* s) {
 
 Bld_Hash bld_hash_combine(Bld_Hash a, Bld_Hash b) {
     uint64_t buf[2] = {a.value, b.value};
-    return (Bld_Hash){XXH3_64bits(buf, sizeof(buf))};
+    return (Bld_Hash){bld__fnv1a(buf, sizeof(buf))};
 }
 
 Bld_Hash bld_hash_combine_unordered(Bld_Hash a, Bld_Hash b) {
@@ -378,7 +386,7 @@ Bld_Hash bld_hash_combine_unordered(Bld_Hash a, Bld_Hash b) {
 }
 
 Bld_Hash bld_hash_str(const char* s) {
-    return (Bld_Hash){XXH3_64bits(s, strlen(s))};
+    return (Bld_Hash){bld__fnv1a(s, strlen(s))};
 }
 
 Bld_Hash bld_hash_file(Bld_Path p) {
@@ -393,11 +401,11 @@ Bld_Hash bld_hash_file(Bld_Path p) {
         ssize_t n = read(fd, buf, len);
         close(fd);
         if (n < 0 || (size_t)n != len) bld_panic("hash_file: read %s: %s\n", p.s, strerror(errno));
-        return (Bld_Hash){XXH3_64bits(buf, len)};
+        return (Bld_Hash){bld__fnv1a(buf, len)};
     }
     void* data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED) { close(fd); bld_panic("hash_file: mmap %s: %s\n", p.s, strerror(errno)); }
-    Bld_Hash h = {XXH3_64bits(data, len)};
+    Bld_Hash h = {bld__fnv1a(data, len)};
     munmap(data, len);
     close(fd);
     return h;
