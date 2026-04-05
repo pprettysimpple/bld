@@ -30,3 +30,37 @@ for f in s/*.c; do
     cur_hash=$(find out -type f | sort | xargs md5sum | md5sum | cut -d' ' -f1)
     [ "$cur_hash" = "$ref_hash" ] || die "hash mismatch after reverting $f"
 done
+
+# --- kill-recovery: kill bld mid-compilation, verify incremental rebuild
+# produces byte-identical output to the reference build ---
+
+delays=(0.001 0.005 0.01 0.02 0.05)
+actual_kills=0
+for i in "${!delays[@]}"; do
+    round=$((i + 1))
+    rm -rf .cache out 2>/dev/null
+    bld_bootstrap
+
+    # start build in background, kill it mid-flight
+    ./b install -j4 --prefix out >/dev/null 2>&1 &
+    pid=$!
+
+    sleep "${delays[$i]}"
+
+    set +e
+    kill -9 "$pid" 2>/dev/null
+    kill_ok=$?
+    wait "$pid" 2>/dev/null
+    set -e
+
+    if [ "$kill_ok" -eq 0 ]; then actual_kills=$((actual_kills + 1)); fi
+
+    # incremental rebuild on top of partial state — must match reference
+    bld_install
+    assert_success
+
+    cur_hash=$(find out -type f | sort | xargs md5sum | md5sum | cut -d' ' -f1)
+    [ "$cur_hash" = "$ref_hash" ] || die "kill round $round: hash mismatch"
+done
+
+[ "$actual_kills" -gt 0 ] || die "no builds were actually killed ($actual_kills)"
