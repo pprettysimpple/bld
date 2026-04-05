@@ -62,7 +62,10 @@ static void bld__parse_args(Bld* b) {
     }
     s->passthrough = passthrough;
     s->targets = targets;
-    if (s->max_jobs <= 0) { long n = sysconf(_SC_NPROCESSORS_ONLN); s->max_jobs = n > 0 ? (int)n : 1; }
+    if (s->max_jobs <= 0) {
+        long n = sysconf(_SC_NPROCESSORS_ONLN);
+        s->max_jobs = n > 0 ? (int)n : 1;
+    }
     if (s->targets.count == 0) s->show_help = true;
 }
 
@@ -271,11 +274,14 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
     bld_fs_write_file(bld_path_join(b->out, bld_path(".gitignore")), "*", 1);
 
     /* Detect compilers from environment */
-    const char *cc_env = getenv("CC"), *cc = cc_env ? cc_env : "cc";
+    const char* cc_env  = getenv("CC");
+    const char* cxx_env = getenv("CXX");
+    const char* as_env  = getenv("AS");
+    const char* cc     = cc_env  ? cc_env  : "cc";
+    const char* cxx    = cxx_env ? cxx_env : "c++";
+    const char* as_drv = as_env  ? as_env  : cc;
     if (!bld__has_in_path(cc) && !cc_env)
         bld_panic("C compiler '%s' not found in PATH\n", cc);
-    const char *cxx_env = getenv("CXX"), *cxx = cxx_env ? cxx_env : "c++";
-    const char *as_env = getenv("AS"), *as_drv = as_env ? as_env : cc;
 
     /* Detect target OS from compiler triple */
     const char* dumpmachine_cmd = bld_str_fmt("%s -dumpmachine 2>/dev/null", cc);
@@ -332,8 +338,10 @@ static void bld__init(Bld* b, int argc, char** argv) {
 
 static void bld__escape_json(Bld_Cmd* out, const char* s) {
     for (; *s; s++) {
-        if (*s == '"' || *s == '\\') { char tmp[3] = {'\\', *s, 0}; bld_cmd_appendf(out, "%s", tmp); }
-        else { char tmp[2] = {*s, 0}; bld_cmd_appendf(out, "%s", tmp); }
+        if (*s == '"' || *s == '\\')
+            bld_cmd_appendf(out, "\\%c", *s);
+        else
+            bld_cmd_appendf(out, "%c", *s);
     }
 }
 

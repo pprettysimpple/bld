@@ -8,14 +8,22 @@
 /* ---- Step sync ---- */
 
 static Bld_StepState bld__step_state(Bld_Step* s) {
-    pthread_mutex_lock(&s->mutex); Bld_StepState st = s->state; pthread_mutex_unlock(&s->mutex); return st;
+    pthread_mutex_lock(&s->mutex);
+    Bld_StepState st = s->state;
+    pthread_mutex_unlock(&s->mutex);
+    return st;
 }
+
 static int bld__step_is_done(Bld_Step* s) {
     Bld_StepState st = bld__step_state(s);
     return st == BLD_STEP_OK || st == BLD_STEP_FAILED || st == BLD_STEP_SKIPPED;
 }
+
 static void bld__step_set_state(Bld_Step* s, Bld_StepState st) {
-    pthread_mutex_lock(&s->mutex); s->state = st; pthread_cond_broadcast(&s->cond); pthread_mutex_unlock(&s->mutex);
+    pthread_mutex_lock(&s->mutex);
+    s->state = st;
+    pthread_cond_broadcast(&s->cond);
+    pthread_mutex_unlock(&s->mutex);
 }
 static void bld__step_wait(Bld_Step* s) {
     pthread_mutex_lock(&s->mutex);
@@ -137,7 +145,11 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
     int* visited = bld_arena_alloc(num_steps * sizeof(int));
     memset(visited, 0, num_steps * sizeof(int));
 
-    typedef struct { Bld_Step* step; size_t dep_i, input_i; } DfsFrame;
+    typedef struct {
+        Bld_Step* step;
+        size_t    dep_i;      /* position in ordering deps */
+        size_t    input_i;    /* position in data inputs */
+    } DfsFrame;
     BLD_DA(DfsFrame) stack = {0};
 
     for (size_t ri = 0; ri < roots->count; ri++) {
