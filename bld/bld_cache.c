@@ -67,7 +67,10 @@ static Bld_Path bld__cache_art_meta(Bld* b, Bld_Hash h) {
 static Bld_Path bld__depfile_path(Bld* b, Bld_Step* s) {
     size_t len = strlen(s->name);
     char* safe = bld_arena_alloc(len + 1);
-    for (size_t i = 0; i < len; i++) safe[i] = (s->name[i] == '/') ? '_' : s->name[i];
+    for (size_t i = 0; i < len; i++) {
+        char c = s->name[i];
+        safe[i] = (c == '/' || c == ':' || c == '\\') ? '_' : c;
+    }
     safe[len] = '\0';
     return bld_path_join(bld_path_join(b->cache, bld_path("deps")), bld_path_fmt("%s.d", safe));
 }
