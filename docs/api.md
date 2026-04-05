@@ -177,6 +177,16 @@ Bld_CompileFlags flags = {
 };
 ```
 
+Defines must be simple tokens: `FOO`, `FOO=1`, `_GNU_SOURCE`.
+For values with spaces or quotes (like `VERSION="1.0"`), use a generated header:
+
+```c
+bld_fs_write_str(bld_filepath("generated/version.h"),
+    "#define VERSION \"1.0\"\n");
+```
+
+This avoids cross-platform shell escaping issues.
+
 ### Reusing and Modifying Flags
 
 ```c

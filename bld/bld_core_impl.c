@@ -913,9 +913,16 @@ static void bld__gcc_render_compile(Bld_Cmd* cmd, Bld_CompileCmd c) {
     /* extra compile flags (from CompileFlags.extra_flags) */
     if (c.extra_flags && c.extra_flags[0]) bld_cmd_appendf(cmd, " %s", c.extra_flags);
 
-    /* defines — no shell quoting, identifiers don't need it */
-    for (size_t i = 0; i < c.defines.count; i++)
-        bld_cmd_appendf(cmd, " -D%s", c.defines.items[i]);
+    /* defines — simple identifiers only, no shell escaping needed.
+     * complex values (spaces, quotes) belong in generated headers. */
+    for (size_t i = 0; i < c.defines.count; i++) {
+        const char* d = c.defines.items[i];
+        for (const char* p = d; *p; p++)
+            if (*p == ' ' || *p == '"' || *p == '\'')
+                bld_panic("define '%s' contains special characters; "
+                          "use a generated header instead\n", d);
+        bld_cmd_appendf(cmd, " -D%s", d);
+    }
 
     /* include dirs from CompileFlags */
     for (size_t i = 0; i < c.include_dirs.count; i++)
