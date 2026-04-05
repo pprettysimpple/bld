@@ -402,6 +402,8 @@ static Bld_Hash bld__obj_recipe_hash(void* ctx, Bld_Hash h) {
     h = bld_hash_combine(h, bld_hash_str(src.s));
     h = bld_hash_combine(h, bld_hash_file(src));
     h = bld__hash_compile_flags(h, &flags);
+    for (size_t i = 0; i < c->b->global_defines.count; i++)
+        h = bld_hash_combine(h, bld_hash_str(c->b->global_defines.items[i]));
     h = bld__hash_build_flags(h, &c->b->build_flags);
     h = bld_hash_combine(h, (Bld_Hash){c->pic});
     h = bld_hash_combine(h, (Bld_Hash){c->parent->include_dirs.count});
@@ -564,7 +566,9 @@ static Bld_CompileCmd bld__build_compile_cmd(Bld__ObjCtx* c, Bld_Path output, Bl
     result.asan        = asan;
     result.lto         = lto;
     result.extra_flags = flags.extra_flags;
-    result.defines          = flags.defines;
+    result.defines          = c->b->global_defines.count
+                              ? bld_strs_merge(c->b->global_defines, flags.defines)
+                              : flags.defines;
     result.include_dirs     = flags.include_dirs;
     result.sys_include_dirs = flags.system_include_dirs;
     result.extra_cflags     = extra_cflags_str;
@@ -1158,6 +1162,7 @@ Bld* bld_new(Bld* parent) {
     b->toolchain = parent->toolchain;
     b->global_warnings = parent->global_warnings;
     b->global_optimize = parent->global_optimize;
+    b->global_defines = parent->global_defines;
     b->build_flags = parent->build_flags;
     b->settings = parent->settings;
     b->settings.silent = true; /* child builds are silent by default */

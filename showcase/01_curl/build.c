@@ -94,6 +94,7 @@ static void write_curl_config_h(Bld* b, bool has_ipv6,
 
 void configure(Bld* b) {
     set_compiler_c(b, .standard = BLD_C_GNU11);
+    b->global_defines = BLD_STRS("_GNU_SOURCE");
 
     /* ------------------------------------------------------------------ */
     /* User options                                                        */
@@ -297,7 +298,6 @@ void configure(Bld* b) {
     strs_push(&lib_defines, "HAVE_CONFIG_H");
     strs_push(&lib_defines, "BUILDING_LIBCURL");
     strs_push(&lib_defines, "CURL_STATICLIB");
-    strs_push(&lib_defines, "_GNU_SOURCE");
     /* Disable features we do not have headers for */
     strs_push(&lib_defines, "CURL_DISABLE_LDAP");
     strs_push(&lib_defines, "CURL_DISABLE_LDAPS");
@@ -384,7 +384,6 @@ void configure(Bld* b) {
     Bld_Strs exe_defines = {0};
     strs_push(&exe_defines, "HAVE_CONFIG_H");
     strs_push(&exe_defines, "CURL_STATICLIB");
-    strs_push(&exe_defines, "_GNU_SOURCE");
 
     if (dep_ssl && dep_ssl->found)
         strs_push(&exe_defines, "USE_OPENSSL");

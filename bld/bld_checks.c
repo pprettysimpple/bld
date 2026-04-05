@@ -25,9 +25,10 @@ typedef struct { Bld* b; const char* snippet; bool is_sizeof; } Bld__CheckCtx;
 
 static Bld_Hash bld__check_recipe_hash(void* ctx, Bld_Hash h) {
     Bld__CheckCtx* c = ctx;
-    h = bld_hash_combine(h, bld_compiler(c->b, BLD_LANG_C)->identity_hash);
+    Bld_Compiler* comp = bld_compiler(c->b, BLD_LANG_C);
+    h = bld_hash_combine(h, comp->identity_hash);
+    h = bld_hash_combine(h, (Bld_Hash){comp->c.standard});
     h = bld_hash_combine(h, bld_hash_str(c->snippet));
-    /* include system include path freshness — detects newly installed packages */
     h = bld_hash_combine(h, c->b->toolchain->sysinclude_hash);
     return h;
 }
@@ -45,9 +46,11 @@ static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path d
 
     /* compile snippet via toolchain (same compiler/flags as real builds) */
     Bld_Path tmp_obj = bld__cache_tmp(c->b);
+    Bld_Compiler* comp = bld_compiler(c->b, BLD_LANG_C);
     Bld_CompileCmd cc_cmd = {
         .driver = cc,
         .lang = BLD_LANG_C,
+        .c_std = comp->c.standard,
         .source = src.s,
         .output = tmp_obj.s,
         .depfile = (!c->is_sizeof && depfile.s && depfile.s[0]) ? depfile.s : "",
@@ -97,6 +100,14 @@ static void bld__checks_add(Bld_Checks* c, const char* define_name, const char* 
         c->items = bld_arena_realloc(c->items, c->cap * sizeof(Bld__Check), nc * sizeof(Bld__Check));
         c->cap = nc;
     }
+    /* prepend global_defines to snippet so checks see the same macros as targets */
+    if (c->parent->global_defines.count > 0) {
+        Bld_Cmd pfx = {0};
+        for (size_t i = 0; i < c->parent->global_defines.count; i++)
+            bld_cmd_appendf(&pfx, "#define %s\n", c->parent->global_defines.items[i]);
+        snippet = bld_str_fmt("%s%s", pfx.items, snippet);
+    }
+
     Bld__Check* ch = &c->items[c->count++];
     ch->define_name = define_name;
     ch->snippet = snippet;

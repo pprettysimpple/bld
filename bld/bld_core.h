@@ -537,6 +537,7 @@ typedef struct {
     Bld_Toolchain* toolchain;
     Bld_Optimize   global_optimize;
     bool           global_warnings;
+    Bld_Strs       global_defines;    /* applied to all targets and checks */
     Bld_BuildFlags build_flags;
 
     Bld_Target*  target_default;
