@@ -1008,7 +1008,9 @@ Bld_Target* bld_install(Bld* b, Bld_Target* target, Bld_Path dst) {
 Bld_Target* bld_install_exe(Bld* b, Bld_Target* t) {
     Bld_Exe* exe = bld__as_exe(t);
     const char* oname = (exe->opts.output_name && exe->opts.output_name[0]) ? exe->opts.output_name : exe->opts.name;
-    return bld_install(b, t, bld_path_join(bld_path("bin"), bld_path(oname)));
+    const char* ext = exe->toolchain->exe_ext;
+    const char* fname = (ext && ext[0]) ? bld_str_fmt("%s%s", oname, ext) : oname;
+    return bld_install(b, t, bld_path_join(bld_path("bin"), bld_path(fname)));
 }
 
 Bld_Target* bld_install_lib(Bld* b, Bld_Target* t) {

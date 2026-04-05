@@ -58,7 +58,7 @@ jobs:
         run: |
           cd showcase/01_curl && bash fetch-source.sh
           gcc -std=c11 -w build.c -o b.exe -lpthread && ./b.exe build -j4
-          ./build/bin/curl.exe --version
+          ./build/bin/curl --version
 
       - name: Showcase libuv
         run: |
