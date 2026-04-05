@@ -96,6 +96,7 @@ static Bld_Step* bld__alloc_step(Bld* b, const char* name, bool silent) {
     s->silent = silent;
     pthread_mutex_init(&s->mutex, NULL);
     pthread_cond_init(&s->cond, NULL);
+    s->idx = b->all_steps.count;
     bld_da_push(&b->all_steps, s);
     return s;
 }

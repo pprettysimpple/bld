@@ -311,6 +311,7 @@ struct Bld_Step {
     bool content_hash;  /* use output content hash instead of recipe hash for downstream */
 
     /* computed at build time */
+    size_t        idx;          /* index in b->all_steps (set at creation) */
     Bld_Hash input_hash;
     Bld_Hash cache_key;
     bool          hash_valid;

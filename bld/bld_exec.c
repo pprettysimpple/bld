@@ -98,13 +98,6 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
 
 /* ---- Shared infrastructure ---- */
 
-static size_t bld__step_idx(Bld* b, Bld_Step* s) {
-    for (size_t i = 0; i < b->all_steps.count; i++)
-        if (b->all_steps.items[i] == s) return i;
-    bld_panic("step %s not found\n", s->name);
-    return 0;
-}
-
 typedef struct {
     Bld* b; Bld_Step** order; size_t count; pthread_mutex_t* mu; size_t* idx;
 } Bld__WorkerCtx;
@@ -148,9 +141,8 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
     BLD_DA(DfsFrame) stack = {0};
 
     for (size_t ri = 0; ri < roots->count; ri++) {
-        size_t root_idx = bld__step_idx(b, roots->items[ri]);
-        if (visited[root_idx] == DONE) continue;
-        visited[root_idx] = IN_PROGRESS;
+        if (visited[roots->items[ri]->idx] == DONE) continue;
+        visited[roots->items[ri]->idx] = IN_PROGRESS;
         bld_da_push(&stack, ((DfsFrame){roots->items[ri], 0, 0}));
 
         while (stack.count > 0) {
@@ -160,11 +152,10 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
             /* walk ordering deps */
             while (top->dep_i < top->step->deps.count) {
                 Bld_Step* dep = top->step->deps.items[top->dep_i++];
-                size_t idx = bld__step_idx(b, dep);
-                if (visited[idx] == DONE) continue;
-                if (visited[idx] == IN_PROGRESS)
+                if (visited[dep->idx] == DONE) continue;
+                if (visited[dep->idx] == IN_PROGRESS)
                     bld_panic("cycle: %s -> %s\n", top->step->name, dep->name);
-                visited[idx] = IN_PROGRESS;
+                visited[dep->idx] = IN_PROGRESS;
                 bld_da_push(&stack, ((DfsFrame){dep, 0, 0}));
                 descended = true;
                 break;
@@ -175,11 +166,10 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
             while (top->input_i < top->step->inputs.count) {
                 Bld_Step* dep = top->step->inputs.items[top->input_i++];
                 if (!dep) continue;
-                size_t idx = bld__step_idx(b, dep);
-                if (visited[idx] == DONE) continue;
-                if (visited[idx] == IN_PROGRESS)
+                if (visited[dep->idx] == DONE) continue;
+                if (visited[dep->idx] == IN_PROGRESS)
                     bld_panic("cycle: %s -> %s\n", top->step->name, dep->name);
-                visited[idx] = IN_PROGRESS;
+                visited[dep->idx] = IN_PROGRESS;
                 bld_da_push(&stack, ((DfsFrame){dep, 0, 0}));
                 descended = true;
                 break;
@@ -187,7 +177,7 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
             if (descended) continue;
 
             /* all children visited — emit this step */
-            visited[bld__step_idx(b, top->step)] = DONE;
+            visited[top->step->idx] = DONE;
             bld_da_push(&order, top->step);
             stack.count--;
         }
