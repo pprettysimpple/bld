@@ -226,16 +226,11 @@ static void bld__recompile_if_needed(Bld* b) {
 
     bld_log_info("[*] Recompiling build tool...\n");
     const char* recompile_cmd_str = bld_str_fmt("%s -o \"%s\"", bld_recompile_cmd, b->argv[0]);
-    Bld_ProcResult r = bld__subprocess_run(recompile_cmd_str, NULL, BLD_PROC_DEFAULT);
-    if (r.exit_code != 0) {
-        bld__dump_to_stderr(r.output_file);
-        bld_panic("failed to recompile build tool\n");
-    }
-    bld__proc_discard_output(&r);
     const char* hs = bld_str_fmt("%" PRIu64, h.value);
     bld_fs_write_file(hp, hs, strlen(hs));
-    bld_plat_reexec(b->argv);
-    bld_fs_remove(hp);  /* only reached on POSIX if execv fails */
+    bld_plat_self_recompile(recompile_cmd_str, b->argv[0], b->argv);
+    /* not reached on success */
+    bld_fs_remove(hp);
 }
 
 /* ---- Init stages ---- */

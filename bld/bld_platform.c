@@ -449,16 +449,34 @@ static int bld_plat_cpus(void) {
 #endif
 
 /* ================================================================
- *  Re-exec (after self-recompilation)
+ *  Self-recompile + re-exec
  * ================================================================ */
 
 #ifdef _WIN32
-static void bld_plat_reexec(char** argv) {
-    intptr_t rc = _spawnv(_P_WAIT, argv[0], (const char* const*)argv);
+/* Windows: can't overwrite running exe. rename it first, compile new one, re-exec. */
+static void bld_plat_self_recompile(const char* cmd, const char* exe, char** argv) {
+    const char* old = bld_str_fmt("%s.old", exe);
+    unlink(old);          /* remove leftover from previous recompile */
+    rename(exe, old);     /* rename running exe (Windows allows this) */
+    Bld_ProcResult r = bld_plat_run(cmd, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) {
+        bld__dump_to_stderr(r.output_file);
+        rename(old, exe); /* restore on failure */
+        bld_panic("failed to recompile build tool\n");
+    }
+    bld__proc_discard_output(&r);
+    intptr_t rc = _spawnv(_P_WAIT, exe, (const char* const*)argv);
     exit((int)rc);
 }
 #else
-static void bld_plat_reexec(char** argv) {
+static void bld_plat_self_recompile(const char* cmd, const char* exe, char** argv) {
+    (void)exe;
+    Bld_ProcResult r = bld_plat_run(cmd, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) {
+        bld__dump_to_stderr(r.output_file);
+        bld_panic("failed to recompile build tool\n");
+    }
+    bld__proc_discard_output(&r);
     execv(argv[0], argv);
     bld_panic("execv failed: %s\n", strerror(errno));
 }
