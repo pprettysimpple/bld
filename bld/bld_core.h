@@ -414,9 +414,9 @@ typedef struct {
     Bld_Paths        sources;
     Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
     Bld_CompileFlags compile;
-    Bld_CompileFlags compile_propagate; /* public: propagated to link_with consumers */
+    Bld_CompileFlags compile_pub; /* public: propagated to link_with consumers */
     Bld_LinkFlags    link;
-    Bld_LinkFlags    link_propagate;    /* public: propagated to link_with consumers */
+    Bld_LinkFlags    link_pub;    /* public: propagated to link_with consumers */
     Bld_Toolchain*   toolchain;  /* NULL = use Bld default */
 } Bld_ExeOpts;
 
@@ -427,9 +427,9 @@ typedef struct {
     Bld_Paths        sources;
     Bld_Lang         lang;       /* BLD_LANG_AUTO (0): per-file by extension */
     Bld_CompileFlags compile;           /* private: for compiling this lib's sources */
-    Bld_CompileFlags compile_propagate; /* public: propagated to targets that link_with this lib */
+    Bld_CompileFlags compile_pub; /* public: propagated to targets that link_with this lib */
     Bld_LinkFlags    link;
-    Bld_LinkFlags    link_propagate;    /* public: propagated to consumers via link_with */
+    Bld_LinkFlags    link_pub;    /* public: propagated to consumers via link_with */
     bool             shared;
     Bld_Toolchain*   toolchain;  /* NULL = use Bld default */
 } Bld_LibOpts;

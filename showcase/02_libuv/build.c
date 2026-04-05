@@ -13,7 +13,7 @@
 
 #define BLD_IMPLEMENTATION
 #define BLD_STRIP_PREFIX
-#include "bld.h"
+#include "../../bld.h"
 
 BLD_RECOMPILE_CMD("cc -std=c11 -w build.c -lpthread")
 
@@ -39,11 +39,11 @@ void configure(Bld* b) {
     /*  need explicit exclusion.                                           */
     /* ------------------------------------------------------------------ */
 
-    Bld_Paths srcs = files_glob("src/**/*.c");
+    Bld_Paths srcs = files_glob("prj/src/**/*.c");
 
     srcs = files_exclude(srcs, BLD_PATHS(
         /* --- Windows backend (entire directory) --- */
-        "src/win",
+        "prj/src/win",
 
         /* --- Other Unix platform backends ---
          * Each of these files implements OS-specific functionality for a
@@ -125,9 +125,9 @@ void configure(Bld* b) {
 
     /* Private include dirs — needed to compile libuv sources */
     cflags.include_dirs = BLD_PATHS(
-        "include",     /* public headers (uv.h, uv/*.h) */
-        "src",         /* private headers (uv-common.h, etc.) */
-        "src/unix"     /* private unix headers (internal.h, etc.) */
+        "prj/include",     /* public headers (uv.h, uv/*.h) */
+        "prj/src",         /* private headers (uv-common.h, etc.) */
+        "prj/src/unix"     /* private unix headers (internal.h, etc.) */
     );
 
     /* ------------------------------------------------------------------ */
@@ -143,15 +143,15 @@ void configure(Bld* b) {
 
         /* Public include path: consumers that link_with(target, uv)
          * automatically get -Iinclude for uv.h */
-        .compile_propagate = {
-            .include_dirs = BLD_PATHS("include")
+        .compile_pub = {
+            .include_dirs = BLD_PATHS("prj/include")
         },
 
         /* Public link dependencies: libuv consumers must link these.
          * - pthread: threading, mutexes, conditions
          * - dl: dlopen/dlsym for shared library loading
          * - rt: clock_gettime, timer_create (older glibc) */
-        .link_propagate = {
+        .link_pub = {
             .libs = BLD_STRS("pthread", "dl", "rt")
         }
     );
@@ -161,8 +161,8 @@ void configure(Bld* b) {
     /* ------------------------------------------------------------------ */
 
     install_lib(b, uv);
-    install_files(b, BLD_PATHS("include/uv.h"), bld_filepath("include"));
-    install_dir(b, "include/uv", bld_filepath("include/uv"));
+    install_files(b, BLD_PATHS("prj/include/uv.h"), bld_filepath("include"));
+    install_dir(b, "prj/include/uv", bld_filepath("include/uv"));
 
     /* ------------------------------------------------------------------ */
     /*  Test runner                                                        */
@@ -176,10 +176,10 @@ void configure(Bld* b) {
 
     if (build_tests) {
         /* Glob all test sources, exclude Windows runner and benchmarks */
-        Bld_Paths test_srcs = files_glob("test/*.c");
+        Bld_Paths test_srcs = files_glob("prj/test/*.c");
         test_srcs = files_exclude(test_srcs, BLD_PATHS(
-            "test/runner-win.c",       /* Windows test runner */
-            "test/run-benchmarks.c",   /* Separate benchmark binary */
+            "prj/test/runner-win.c",       /* Windows test runner */
+            "prj/test/run-benchmarks.c",   /* Separate benchmark binary */
             "*benchmark-*"             /* All benchmark source files */
         ));
 
@@ -190,10 +190,10 @@ void configure(Bld* b) {
             "_FILE_OFFSET_BITS=64"
         );
         test_cflags.include_dirs = BLD_PATHS(
-            "include",
-            "src",       /* tests include private libuv headers */
-            "src/unix",
-            "test"       /* test infrastructure headers (task.h, runner.h) */
+            "prj/include",
+            "prj/src",       /* tests include private libuv headers */
+            "prj/src/unix",
+            "prj/test"       /* test infrastructure headers (task.h, runner.h) */
         );
 
         Bld_Target* test_exe = add_exe(b,

@@ -221,9 +221,9 @@ static void bld__resolve_link_deps(Bld* b) {
                     bld__push_ext_dep_dedup(exe, dep->ext_deps.items[k]);
             }
 
-            /* propagate compile_propagate from lib deps as synthetic ext_dep */
+            /* propagate compile_pub from lib deps as synthetic ext_dep */
             if (dep->kind == BLD_TGT_LIB) {
-                Bld_CompileFlags* pub = &((Bld_Lib*)dep)->opts.compile_propagate;
+                Bld_CompileFlags* pub = &((Bld_Lib*)dep)->opts.compile_pub;
                 if (pub->include_dirs.count || pub->system_include_dirs.count ||
                     pub->defines.count || pub->extra_flags) {
                     /* build extra_cflags from defines */
@@ -249,12 +249,12 @@ static void bld__resolve_link_deps(Bld* b) {
                     bld_da_push(&t->ext_deps, syn);
                 }
 
-                /* propagate link_propagate from lib deps as synthetic ext_dep (link-side) */
-                Bld_LinkFlags* lpub = &((Bld_Lib*)dep)->opts.link_propagate;
+                /* propagate link_pub from lib deps as synthetic ext_dep (link-side) */
+                Bld_LinkFlags* lpub = &((Bld_Lib*)dep)->opts.link_pub;
                 if (lpub->libs.count || lpub->lib_dirs.count || lpub->extra_flags) {
                     Bld_Dep* lsyn = bld_arena_alloc(sizeof(Bld_Dep));
                     *lsyn = (Bld_Dep){
-                        .name = bld_str_fmt("%s:link_propagate", dep->name),
+                        .name = bld_str_fmt("%s:link_pub", dep->name),
                         .found = true,
                         .libs = lpub->libs,
                         .lib_dirs = lpub->lib_dirs,
@@ -841,9 +841,9 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
     lib->opts.lib_basename = opts->lib_basename ? bld_str_dup(opts->lib_basename) : NULL;
     lib->opts.sources = bld__clone_paths(opts->sources);
     lib->opts.compile = bld_clone_compile_flags(opts->compile);
-    lib->opts.compile_propagate = bld_clone_compile_flags(opts->compile_propagate);
+    lib->opts.compile_pub = bld_clone_compile_flags(opts->compile_pub);
     lib->opts.link = bld_clone_link_flags(opts->link);
-    lib->opts.link_propagate = bld_clone_link_flags(opts->link_propagate);
+    lib->opts.link_pub = bld_clone_link_flags(opts->link_pub);
     lib->toolchain = opts->toolchain ? opts->toolchain : b->toolchain;
 
     bld__init_target(b, &lib->target, BLD_TGT_LIB, lib->opts.name, lib->opts.desc);

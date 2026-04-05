@@ -50,11 +50,11 @@ Bld_Target* lib = bld_add_lib(b,
     .name    = "mylib",
     .sources = BLD_PATHS("src/foo.c", "src/bar.c"),
     .compile           = { .optimize = BLD_OPT_O2 },
-    .compile_propagate = { .include_dirs = BLD_PATHS("include") });
+    .compile_pub = { .include_dirs = BLD_PATHS("include") });
 ```
 
 `compile` flags apply when compiling this lib's sources.
-`compile_propagate` flags propagate to any target that calls `bld_link_with(target, lib)`.
+`compile_pub` flags are public: passed to any target that calls `bld_link_with(target, lib)`.
 
 ### Shared Library
 
@@ -74,9 +74,9 @@ Bld_Target* so = bld_add_lib(b,
 - `.sources` — `Bld_Paths` of source files
 - `.lang` — force language: `BLD_LANG_C`, `BLD_LANG_CXX`, `BLD_LANG_ASM`, or `BLD_LANG_AUTO` (default, detect by extension)
 - `.compile` — `Bld_CompileFlags` (private compile flags)
-- `.compile_propagate` — `Bld_CompileFlags` (public, propagated via `link_with`)
+- `.compile_pub` — `Bld_CompileFlags` (public, propagated via `link_with`)
 - `.link` — `Bld_LinkFlags` (private link flags)
-- `.link_propagate` — `Bld_LinkFlags` (public, propagated via `link_with`)
+- `.link_pub` — `Bld_LinkFlags` (public, propagated via `link_with`)
 - `.toolchain` — override per-target toolchain (default: `b->toolchain`)
 
 ### Lib Opts Fields
@@ -85,8 +85,8 @@ Same as Exe, except:
 - `.lib_basename` — override library filename base (default: `.name`).
   Toolchain adds prefix/suffix automatically (`lib` + `.a`/`.so`/`.dylib`).
   Example: `.lib_basename = "z"` produces `libz.a`.
-- `.compile_propagate` — public compile flags, propagated to consumers via `link_with`
-- `.link_propagate` — public link flags, propagated to consumers via `link_with`
+- `.compile_pub` — public compile flags, propagated to consumers via `link_with`
+- `.link_pub` — public link flags, propagated to consumers via `link_with`
 - `.shared` — `true` for shared library, `false` (default) for static
 
 ## Source Files
@@ -223,14 +223,14 @@ automatically uses the C++ compiler as the linker driver. No need to add
 ## Linking Targets Together
 
 ```c
-bld_link_with(exe, lib);       // link lib into exe + propagate compile/link_propagate
+bld_link_with(exe, lib);       // link lib into exe + propagate compile/link_pub
 bld_depends_on(gen, codegen);  // ordering only, no artifact passing
 ```
 
 `bld_link_with` is transitive: if A links B and B links C, A gets C's propagated flags.
 
-Use `link_propagate` on a library for system libs that consumers must also link
-(e.g. `.link_propagate = { .libs = BLD_STRS("m", "dl") }` on a lib that uses `libm`/`libdl`).
+Use `link_pub` on a library for system libs that consumers must also link
+(e.g. `.link_pub = { .libs = BLD_STRS("m", "dl") }` on a lib that uses `libm`/`libdl`).
 
 ## External Dependencies
 
@@ -472,7 +472,7 @@ void configure(Bld* b) {
         .name              = "mylib",
         .sources           = lib_srcs,
         .compile           = cflags,
-        .compile_propagate = { .include_dirs = BLD_PATHS("include") });
+        .compile_pub = { .include_dirs = BLD_PATHS("include") });
 
     // executable
     Bld_Target* app = bld_add_exe(b,
