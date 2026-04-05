@@ -3,14 +3,29 @@
 
 #include "bld_build.c"
 
+/* ---- Timer compat ---- */
+
+static double bld__time_now(void) {
+#ifdef _WIN32
+    LARGE_INTEGER freq, cnt;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&cnt);
+    return (double)cnt.QuadPart / (double)freq.QuadPart;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+#endif
+}
+
 /* ---- Build stats — stored on Bld, accessed atomically ---- */
 
 /* ---- Step sync ---- */
 
 static Bld_StepState bld__step_state(Bld_Step* s) {
-    pthread_mutex_lock(&s->mutex);
+    bld__mutex_lock(&s->mutex);
     Bld_StepState st = s->state;
-    pthread_mutex_unlock(&s->mutex);
+    bld__mutex_unlock(&s->mutex);
     return st;
 }
 
@@ -20,16 +35,16 @@ static int bld__step_is_done(Bld_Step* s) {
 }
 
 static void bld__step_set_state(Bld_Step* s, Bld_StepState st) {
-    pthread_mutex_lock(&s->mutex);
+    bld__mutex_lock(&s->mutex);
     s->state = st;
-    pthread_cond_broadcast(&s->cond);
-    pthread_mutex_unlock(&s->mutex);
+    bld__cond_broadcast(&s->cond);
+    bld__mutex_unlock(&s->mutex);
 }
 static void bld__step_wait(Bld_Step* s) {
-    pthread_mutex_lock(&s->mutex);
+    bld__mutex_lock(&s->mutex);
     while (s->state == BLD_STEP_PENDING || s->state == BLD_STEP_RUNNING)
-        pthread_cond_wait(&s->cond, &s->mutex);
-    pthread_mutex_unlock(&s->mutex);
+        bld__cond_wait(&s->cond, &s->mutex);
+    bld__mutex_unlock(&s->mutex);
 }
 
 /* ---- Hash + cache check ---- */
@@ -53,11 +68,11 @@ static void bld__compute_input_hash(Bld* b, Bld_Step* step) {
 static void bld__perform_step(Bld* b, Bld_Step* step) {
     if (bld__step_is_done(step)) return;
 
-    /* check if any dep failed → skip */
+    /* check if any dep failed -> skip */
     for (size_t i = 0; i < step->deps.count; i++) {
         Bld_StepState ds = bld__step_state(step->deps.items[i]);
         if (ds == BLD_STEP_FAILED || ds == BLD_STEP_SKIPPED) {
-            __atomic_fetch_add(&b->steps_skipped, 1, __ATOMIC_RELAXED);
+            bld__atomic_fetch_add64(&b->steps_skipped, 1);
             bld__step_set_state(step, BLD_STEP_SKIPPED);
             return;
         }
@@ -66,7 +81,7 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
         if (!step->inputs.items[i]) continue;
         Bld_StepState ds = bld__step_state(step->inputs.items[i]);
         if (ds == BLD_STEP_FAILED || ds == BLD_STEP_SKIPPED) {
-            __atomic_fetch_add(&b->steps_skipped, 1, __ATOMIC_RELAXED);
+            bld__atomic_fetch_add64(&b->steps_skipped, 1);
             bld__step_set_state(step, BLD_STEP_SKIPPED);
             return;
         }
@@ -76,7 +91,7 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
     bld__compute_input_hash(b, step);
 
     if (bld__cache_has(b, step)) {
-        __atomic_fetch_add(&b->steps_cached, 1, __ATOMIC_RELAXED);
+        bld__atomic_fetch_add64(&b->steps_cached, 1);
         bld__step_set_state(step, BLD_STEP_OK);
         return;
     }
@@ -88,24 +103,24 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
 
     if (result.status != 0) {
         if (!b->settings.silent && step->name[0]) {
-            pthread_mutex_lock(&bld__log_mutex);
+            bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
             fprintf(stderr, "\n%sFAILED:%s %s\n",
                     bld__c(BLD_C_RED), bld__c(BLD_C_RESET), step->name);
             bld__dump_to_stderr(result.output_file);
             if (result.output_file.s && result.output_file.s[0])
                 fprintf(stderr, "  full output: %s\n", result.output_file.s);
-            pthread_mutex_unlock(&bld__log_mutex);
+            bld__mutex_unlock(&bld__log_mutex);
         }
-        __atomic_fetch_add(&b->steps_failed, 1, __ATOMIC_RELAXED);
+        bld__atomic_fetch_add64(&b->steps_failed, 1);
         bld__step_set_state(step, BLD_STEP_FAILED);
         return;
     }
 
     bld__cache_store(b, step, tmp_out, tmp_dep);
 
-    __atomic_fetch_add(&b->steps_executed, 1, __ATOMIC_RELAXED);
+    bld__atomic_fetch_add64(&b->steps_executed, 1);
     if (!b->settings.silent) {
-        uint64_t n = __atomic_fetch_add(&b->progress_current, 1, __ATOMIC_RELAXED) + 1;
+        uint64_t n = bld__atomic_fetch_add64(&b->progress_current, 1) + 1;
         bld_log_progress(n, b->progress_total, step->name);
     }
     bld__step_set_state(step, BLD_STEP_OK);
@@ -114,31 +129,39 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
 /* ---- Shared infrastructure ---- */
 
 typedef struct {
-    Bld* b; Bld_Step** order; size_t count; pthread_mutex_t* mu; size_t* idx;
+    Bld* b; Bld_Step** order; size_t count; Bld_Mutex* mu; size_t* idx;
     int* stop;  /* set to 1 on first failure (fast-fail) */
 } Bld__WorkerCtx;
 
+#ifdef _WIN32
+static DWORD WINAPI bld__worker_fn(void* arg) {
+#else
 static void* bld__worker_fn(void* arg) {
+#endif
     Bld__WorkerCtx* c = arg;
     while (1) {
-        pthread_mutex_lock(c->mu);
+        bld__mutex_lock(c->mu);
         if (*c->idx >= c->count || (*c->stop && !c->b->settings.keep_going)) {
-            pthread_mutex_unlock(c->mu);
+            bld__mutex_unlock(c->mu);
             break;
         }
         Bld_Step* step = c->order[(*c->idx)++];
-        pthread_mutex_unlock(c->mu);
+        bld__mutex_unlock(c->mu);
         for (size_t i = 0; i < step->deps.count; i++) bld__step_wait(step->deps.items[i]);
         for (size_t i = 0; i < step->inputs.count; i++)
             if (step->inputs.items[i]) bld__step_wait(step->inputs.items[i]);
         bld__perform_step(c->b, step);
         if (step->state == BLD_STEP_FAILED)
-            __atomic_store_n(c->stop, 1, __ATOMIC_RELAXED);
+            bld__atomic_store32(c->stop, 1);
     }
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
-/* check_missing_deps removed — found check is now in link_with */
+/* check_missing_deps removed -- found check is now in link_with */
 
 static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
     Bld_StepList order = {0};
@@ -191,7 +214,7 @@ static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
             }
             if (descended) continue;
 
-            /* all children visited — emit this step */
+            /* all children visited -- emit this step */
             visited[top->step->idx] = DONE;
             bld_da_push(&order, top->step);
             stack.count--;
@@ -223,7 +246,7 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
         }
         bld__compute_input_hash(b, step);
         if (bld__cache_has(b, step)) {
-            __atomic_fetch_add(&b->steps_cached, 1, __ATOMIC_RELAXED);
+            bld__atomic_fetch_add64(&b->steps_cached, 1);
             if (b->settings.show_cached && step->action && !step->silent)
                 bld_log_cached(step->name);
             bld__step_set_state(step, BLD_STEP_OK);
@@ -239,7 +262,8 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
     }
 
     /* execute */
-    pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+    Bld_Mutex mu;
+    bld__mutex_init(&mu);
     size_t idx = 0;
     int stop = 0;
     if (b->settings.max_jobs <= 1) {
@@ -249,12 +273,23 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
                 break;
         }
     } else {
+#ifdef _WIN32
+        HANDLE* th = bld_arena_alloc(sizeof(HANDLE) * (size_t)b->settings.max_jobs);
+        Bld__WorkerCtx ctx = {b, order.items, order.count, &mu, &idx, &stop};
+        Bld__WorkerCtx* shared = bld_arena_alloc(sizeof(Bld__WorkerCtx));
+        *shared = ctx;
+        for (int t = 0; t < b->settings.max_jobs; t++)
+            th[t] = CreateThread(NULL, 0, bld__worker_fn, shared, 0, NULL);
+        WaitForMultipleObjects((DWORD)b->settings.max_jobs, th, TRUE, INFINITE);
+        for (int t = 0; t < b->settings.max_jobs; t++) CloseHandle(th[t]);
+#else
         pthread_t* th = bld_arena_alloc(sizeof(pthread_t) * (size_t)b->settings.max_jobs);
         Bld__WorkerCtx ctx = {b, order.items, order.count, &mu, &idx, &stop};
         Bld__WorkerCtx* shared = bld_arena_alloc(sizeof(Bld__WorkerCtx));
         *shared = ctx;
         for (int t = 0; t < b->settings.max_jobs; t++) pthread_create(&th[t], NULL, bld__worker_fn, shared);
         for (int t = 0; t < b->settings.max_jobs; t++) pthread_join(th[t], NULL);
+#endif
     }
 }
 
@@ -277,14 +312,11 @@ static void bld__run_build(Bld* b) {
 
     Bld_StepList order = bld__topo_sort(b, &to_build);
 
-    struct timespec t0;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
+    double t0 = bld__time_now();
 
     bld__build_steps(b, order);
 
-    struct timespec t1;
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    double elapsed = (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
+    double elapsed = bld__time_now() - t0;
     if (!b->settings.silent)
         bld_log_done(b->steps_executed, b->steps_cached, b->steps_failed, b->steps_skipped, elapsed, bld_arena_get()->offset);
     if (b->steps_failed > 0) exit(1);
@@ -303,4 +335,3 @@ void bld_execute(Bld* b) {
     Bld_StepList order = bld__topo_sort(b, &roots);
     bld__build_steps(b, order);
 }
-

@@ -87,8 +87,8 @@ static Bld_Step* bld__alloc_step(Bld* b, const char* name, bool silent) {
     memset(s, 0, sizeof(*s));
     s->name = name ? bld_str_dup(name) : "";
     s->silent = silent;
-    pthread_mutex_init(&s->mutex, NULL);
-    pthread_cond_init(&s->cond, NULL);
+    bld__mutex_init(&s->mutex);
+    bld__cond_init(&s->cond);
     s->idx = b->all_steps.count;
     bld_da_push(&b->all_steps, s);
     return s;

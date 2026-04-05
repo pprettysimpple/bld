@@ -15,6 +15,119 @@ static uint64_t bld__fnv1a(const void* data, size_t len) {
 }
 
 /* ================================================================
+ *  Platform compat helpers
+ * ================================================================ */
+
+#ifdef _WIN32
+static int bld__mkdir_1(const char* path) { return _mkdir(path); }
+#else
+static int bld__mkdir_1(const char* path) { return mkdir(path, 0755); }
+#endif
+
+/* ---- Directory iteration ---- */
+#ifdef _WIN32
+typedef struct {
+    HANDLE          h;
+    WIN32_FIND_DATAA data;
+    int             first;
+    int             valid;
+} Bld__Dir;
+
+static Bld__Dir bld__opendir(const char* path) {
+    Bld__Dir d = {INVALID_HANDLE_VALUE, {0}, 1, 0};
+    char pat[MAX_PATH];
+    snprintf(pat, sizeof(pat), "%s\\*", path);
+    d.h = FindFirstFileA(pat, &d.data);
+    d.valid = (d.h != INVALID_HANDLE_VALUE);
+    return d;
+}
+
+static const char* bld__readdir(Bld__Dir* d) {
+    while (1) {
+        if (!d->valid) return NULL;
+        if (d->first) { d->first = 0; }
+        else { d->valid = FindNextFileA(d->h, &d->data); if (!d->valid) return NULL; }
+        if (strcmp(d->data.cFileName, ".") == 0 || strcmp(d->data.cFileName, "..") == 0) continue;
+        return d->data.cFileName;
+    }
+}
+
+static void bld__closedir(Bld__Dir* d) {
+    if (d->h != INVALID_HANDLE_VALUE) FindClose(d->h);
+}
+#else
+typedef struct { DIR* d; } Bld__Dir;
+
+static Bld__Dir bld__opendir(const char* path) {
+    Bld__Dir d; d.d = opendir(path); return d;
+}
+
+static const char* bld__readdir(Bld__Dir* d) {
+    struct dirent* ent;
+    while ((ent = readdir(d->d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        return ent->d_name;
+    }
+    return NULL;
+}
+
+static void bld__closedir(Bld__Dir* d) { if (d->d) closedir(d->d); }
+#endif
+
+/* ---- fnmatch compat ---- */
+#ifdef _WIN32
+/* simple glob matching: supports *, ?, [chars] */
+static int bld__fnmatch(const char* pat, const char* str) {
+    while (*pat) {
+        if (*pat == '*') {
+            pat++;
+            if (!*pat) return 0;
+            for (; *str; str++) { if (bld__fnmatch(pat, str) == 0) return 0; }
+            return 1;
+        } else if (*pat == '?') {
+            if (!*str) return 1;
+            pat++; str++;
+        } else if (*pat == '[') {
+            pat++;
+            int inv = 0, matched = 0;
+            if (*pat == '!' || *pat == '^') { inv = 1; pat++; }
+            while (*pat && *pat != ']') {
+                if (pat[1] == '-' && pat[2] && pat[2] != ']') {
+                    if (*str >= pat[0] && *str <= pat[2]) matched = 1;
+                    pat += 3;
+                } else {
+                    if (*str == *pat) matched = 1;
+                    pat++;
+                }
+            }
+            if (*pat == ']') pat++;
+            if (inv) matched = !matched;
+            if (!matched || !*str) return 1;
+            str++;
+        } else {
+            if (*pat != *str) return 1;
+            pat++; str++;
+        }
+    }
+    return *str ? 1 : 0;
+}
+#else
+static int bld__fnmatch(const char* pat, const char* str) { return fnmatch(pat, str, 0); }
+#endif
+
+/* ---- realpath compat ---- */
+#ifdef _WIN32
+static char* bld__realpath(const char* path) {
+    char* buf = bld_arena_alloc(MAX_PATH);
+    DWORD n = GetFullPathNameA(path, MAX_PATH, buf, NULL);
+    if (n == 0 || n >= MAX_PATH) return NULL;
+    /* convert backslashes to forward slashes */
+    for (char* p = buf; *p; p++) if (*p == '\\') *p = '/';
+    return buf;
+}
+#endif
+
+/* ================================================================
  *  Arena
  * ================================================================ */
 
@@ -22,6 +135,13 @@ static Bld_Arena bld__global_arena;
 
 Bld_Arena* bld_arena_get(void) {
     if (!bld__global_arena.base) {
+#ifdef _WIN32
+        void* mem = VirtualAlloc(NULL, BLD_ARENA_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (!mem) {
+            fprintf(stderr, "bld: fatal: VirtualAlloc arena failed\n");
+            exit(1);
+        }
+#else
         void* mem = mmap(NULL, BLD_ARENA_SIZE,
                          PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -29,19 +149,20 @@ Bld_Arena* bld_arena_get(void) {
             fprintf(stderr, "bld: fatal: mmap arena failed: %s\n", strerror(errno));
             exit(1);
         }
+#endif
         bld__global_arena.base = mem;
         bld__global_arena.offset = 0;
         bld__global_arena.capacity = BLD_ARENA_SIZE;
         bld__global_arena.last_ptr = NULL;
         bld__global_arena.last_size = 0;
-        pthread_mutex_init(&bld__global_arena.mutex, NULL);
+        bld__mutex_init(&bld__global_arena.mutex);
     }
     return &bld__global_arena;
 }
 
 void* bld_arena_alloc(size_t size) {
     Bld_Arena* a = bld_arena_get();
-    pthread_mutex_lock(&a->mutex);
+    bld__mutex_lock(&a->mutex);
     size_t aligned = (size + 7) & ~(size_t)7;
     if (a->offset + aligned > a->capacity) {
         fprintf(stderr, "bld: fatal: arena OOM (%zu used, %zu requested)\n", a->offset, size);
@@ -51,24 +172,24 @@ void* bld_arena_alloc(size_t size) {
     a->offset += aligned;
     a->last_ptr = ptr;
     a->last_size = aligned;
-    pthread_mutex_unlock(&a->mutex);
+    bld__mutex_unlock(&a->mutex);
     return ptr;
 }
 
 void* bld_arena_realloc(void* old_ptr, size_t old_size, size_t new_size) {
     Bld_Arena* a = bld_arena_get();
-    pthread_mutex_lock(&a->mutex);
+    bld__mutex_lock(&a->mutex);
     if (old_ptr && old_ptr == a->last_ptr) {
         size_t new_aligned = (new_size + 7) & ~(size_t)7;
         if ((char*)old_ptr + new_aligned <= a->base + a->capacity) {
             a->offset = (size_t)((char*)old_ptr - a->base) + new_aligned;
             a->last_size = new_aligned;
-            pthread_mutex_unlock(&a->mutex);
+            bld__mutex_unlock(&a->mutex);
             return old_ptr;
         }
     }
     /* can't realloc in place — allocate new (unlocks/relocks inside) */
-    pthread_mutex_unlock(&a->mutex);
+    bld__mutex_unlock(&a->mutex);
     void* new_ptr = bld_arena_alloc(new_size);
     if (old_ptr && old_size > 0)
         memcpy(new_ptr, old_ptr, old_size < new_size ? old_size : new_size);
@@ -234,7 +355,11 @@ Bld_Path bld_path_fmt(const char* fmt, ...) {
  *  Log
  * ================================================================ */
 
-static pthread_mutex_t bld__log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static Bld_Mutex bld__log_mutex;
+static int bld__log_mutex_inited = 0;
+static void bld__ensure_log_mutex(void) {
+    if (!bld__log_mutex_inited) { bld__mutex_init(&bld__log_mutex); bld__log_mutex_inited = 1; }
+}
 static int bld__color = -1;
 
 static void bld__init_color(void) {
@@ -255,40 +380,40 @@ static const char* bld__c(const char* code) {
 }
 
 void bld_log(const char* fmt, ...) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stdout, fmt, ap);
     va_end(ap);
     fflush(stdout);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
 }
 
 void bld_panic(const char* fmt, ...) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     fprintf(stderr, "%sbld: error:%s ", bld__c(BLD_C_RED), bld__c(BLD_C_RESET));
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fflush(stderr);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
     exit(1);
 }
 
 void bld_log_progress(uint64_t current, uint64_t total, const char* name) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     fprintf(stdout, "%s[%" PRIu64 "/%" PRIu64 "]%s %s\n",
             bld__c(BLD_C_GREEN), current, total, bld__c(BLD_C_RESET), name);
     fflush(stdout);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
 }
 
 void bld_log_cached(const char* name) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     fprintf(stdout, "%s[cached]%s %s\n", bld__c(BLD_C_DIM), bld__c(BLD_C_RESET), name);
     fflush(stdout);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
 }
 
 static const char* bld__fmt_size(size_t bytes) {
@@ -298,7 +423,7 @@ static const char* bld__fmt_size(size_t bytes) {
 }
 
 void bld_log_done(uint64_t executed, uint64_t cached, uint64_t failed, uint64_t skipped, double elapsed, size_t arena_used) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     const char* mem = bld__fmt_size(arena_used);
     const char* color = failed > 0 ? bld__c(BLD_C_RED) : bld__c(BLD_C_GREEN);
     const char* label = failed > 0 ? "bld failed:" : "bld done:";
@@ -309,11 +434,11 @@ void bld_log_done(uint64_t executed, uint64_t cached, uint64_t failed, uint64_t 
     if (skipped > 0)  fprintf(stdout, " %" PRIu64 " skipped,", skipped);
     fprintf(stdout, " %.2fs, %s arena\n", elapsed, mem);
     fflush(stdout);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
 }
 
 void bld_log_action(const char* fmt, ...) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     fprintf(stdout, "%s", bld__c(BLD_C_DIM));
     va_list ap;
     va_start(ap, fmt);
@@ -321,11 +446,11 @@ void bld_log_action(const char* fmt, ...) {
     va_end(ap);
     fprintf(stdout, "%s", bld__c(BLD_C_RESET));
     fflush(stdout);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
 }
 
 void bld_log_info(const char* fmt, ...) {
-    pthread_mutex_lock(&bld__log_mutex);
+    bld__ensure_log_mutex(); bld__mutex_lock(&bld__log_mutex);
     fprintf(stdout, "%s", bld__c(BLD_C_YELLOW));
     va_list ap;
     va_start(ap, fmt);
@@ -333,7 +458,7 @@ void bld_log_info(const char* fmt, ...) {
     va_end(ap);
     fprintf(stdout, "%s", bld__c(BLD_C_RESET));
     fflush(stdout);
-    pthread_mutex_unlock(&bld__log_mutex);
+    bld__mutex_unlock(&bld__log_mutex);
 }
 
 /* ================================================================
@@ -398,17 +523,32 @@ Bld_Hash bld_hash_file(Bld_Path p) {
     if (fd < 0) bld_panic("hash_file: open %s: %s\n", p.s, strerror(errno));
     if (len <= 4096) {
         char buf[4096];
-        ssize_t n = read(fd, buf, len);
+        ssize_t n = read(fd, buf, (unsigned)len);
         close(fd);
         if (n < 0 || (size_t)n != len) bld_panic("hash_file: read %s: %s\n", p.s, strerror(errno));
         return (Bld_Hash){bld__fnv1a(buf, len)};
     }
+#ifdef _WIN32
+    /* Windows: read file in chunks and hash incrementally */
+    {
+        uint64_t h = 0xcbf29ce484222325ull;
+        char buf[8192];
+        ssize_t n;
+        while ((n = read(fd, buf, sizeof(buf))) > 0) {
+            const uint8_t* bp = (const uint8_t*)buf;
+            for (ssize_t i = 0; i < n; i++) { h ^= bp[i]; h *= 0x100000001b3ull; }
+        }
+        close(fd);
+        return (Bld_Hash){h};
+    }
+#else
     void* data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED) { close(fd); bld_panic("hash_file: mmap %s: %s\n", p.s, strerror(errno)); }
     Bld_Hash h = {bld__fnv1a(data, len)};
     munmap(data, len);
     close(fd);
     return h;
+#endif
 }
 
 Bld_Hash bld_hash_dir(Bld_Path dir) {
@@ -453,12 +593,12 @@ void bld_fs_mkdir_p(Bld_Path p) {
     for (char* s = tmp + 1; *s; s++) {
         if (*s == '/') {
             *s = '\0';
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST)
+            if (bld__mkdir_1(tmp) != 0 && errno != EEXIST)
                 bld_panic("mkdir_p: failed to create %s: %s\n", tmp, strerror(errno));
             *s = '/';
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST)
+    if (bld__mkdir_1(tmp) != 0 && errno != EEXIST)
         bld_panic("mkdir_p: failed to create %s: %s\n", p.s, strerror(errno));
 }
 
@@ -471,14 +611,12 @@ static void bld__fs_remove_all_impl(const char* path) {
     struct stat st;
     if (stat(path, &st) != 0) return;
     if (!S_ISDIR(st.st_mode)) { remove(path); return; }
-    DIR* d = opendir(path);
-    if (!d) bld_panic("remove_all: opendir %s: %s\n", path, strerror(errno));
-    struct dirent* ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        bld__fs_remove_all_impl(bld_str_fmt("%s/%s", path, ent->d_name));
+    Bld__Dir d = bld__opendir(path);
+    const char* name;
+    while ((name = bld__readdir(&d)) != NULL) {
+        bld__fs_remove_all_impl(bld_str_fmt("%s/%s", path, name));
     }
-    closedir(d);
+    bld__closedir(&d);
     if (rmdir(path) != 0)
         bld_panic("remove_all: rmdir %s: %s\n", path, strerror(errno));
 }
@@ -527,47 +665,57 @@ static void bld__fs_copy_r_impl(const char* from, const char* to) {
     if (S_ISREG(st.st_mode)) { bld_fs_copy_file((Bld_Path){from}, (Bld_Path){to}); return; }
     if (!S_ISDIR(st.st_mode)) return;
     bld_fs_mkdir_p((Bld_Path){to});
-    DIR* d = opendir(from);
-    if (!d) bld_panic("copy_r: opendir %s: %s\n", from, strerror(errno));
-    struct dirent* ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        bld__fs_copy_r_impl(bld_str_fmt("%s/%s", from, ent->d_name),
-                            bld_str_fmt("%s/%s", to, ent->d_name));
+    Bld__Dir d = bld__opendir(from);
+    const char* name;
+    while ((name = bld__readdir(&d)) != NULL) {
+        bld__fs_copy_r_impl(bld_str_fmt("%s/%s", from, name),
+                            bld_str_fmt("%s/%s", to, name));
     }
-    closedir(d);
+    bld__closedir(&d);
 }
 
 void bld_fs_copy_r(Bld_Path from, Bld_Path to) { bld__fs_copy_r_impl(from.s, to.s); }
 
 Bld_Path bld_fs_realpath(Bld_Path p) {
+#ifdef _WIN32
+    char* resolved = bld__realpath(p.s);
+    if (!resolved) bld_panic("realpath %s: %s\n", p.s, strerror(errno));
+    return (Bld_Path){resolved};  /* already arena-allocated */
+#else
     char* resolved = realpath(p.s, NULL);
     if (!resolved) bld_panic("realpath %s: %s\n", p.s, strerror(errno));
     const char* dup = bld_str_dup(resolved);
     free(resolved);
     return (Bld_Path){dup};
+#endif
 }
 
 Bld_Path bld_fs_getcwd(void) {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    if (!getcwd(buf, sizeof(buf))) bld_panic("getcwd: %s\n", strerror(errno));
+    /* convert backslashes */
+    for (char* p = buf; *p; p++) if (*p == '\\') *p = '/';
+    return (Bld_Path){bld_str_dup(buf)};
+#else
     char* cwd = getcwd(NULL, 0);
     if (!cwd) bld_panic("getcwd: %s\n", strerror(errno));
     const char* dup = bld_str_dup(cwd);
     free(cwd);
     return (Bld_Path){dup};
+#endif
 }
 
 static void bld__fs_list_files_r_impl(const char* dir, Bld_PathList* out) {
-    DIR* d = opendir(dir);
-    if (!d) bld_panic("list_files_r: opendir %s: %s\n", dir, strerror(errno));
-    struct dirent* ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        const char* full = bld_str_fmt("%s/%s", dir, ent->d_name);
+    Bld__Dir d = bld__opendir(dir);
+    const char* name;
+    while ((name = bld__readdir(&d)) != NULL) {
+        const char* full = bld_str_fmt("%s/%s", dir, name);
         Bld_Path fp = {full};
         if (bld_fs_is_dir(fp)) bld__fs_list_files_r_impl(full, out);
         else if (bld_fs_is_file(fp)) bld_da_push(out, fp);
     }
-    closedir(d);
+    bld__closedir(&d);
 }
 
 Bld_PathList bld_fs_list_files_r(Bld_Path dir) {
@@ -713,24 +861,23 @@ Bld_Paths bld_files_glob(const char* pattern) {
         Bld_PathList files = bld_fs_list_files_r(bld_path(base_dir));
         for (size_t i = 0; i < files.count; i++) {
             const char* fname = bld_path_filename(files.items[i]);
-            if (fnmatch(match_pat, fname, 0) == 0)
+            if (bld__fnmatch(match_pat, fname) == 0)
                 bld_paths_push(&result, files.items[i].s);
         }
     } else {
-        DIR* d = opendir(base_dir);
-        if (!d) bld_panic("files_glob: opendir %s: %s\n", base_dir, strerror(errno));
-        struct dirent* ent;
-        while ((ent = readdir(d)) != NULL) {
-            if (ent->d_name[0] == '.') continue;
+        Bld__Dir d = bld__opendir(base_dir);
+        const char* ent_name;
+        while ((ent_name = bld__readdir(&d)) != NULL) {
+            if (ent_name[0] == '.') continue;
             const char* path = (strcmp(base_dir, ".") == 0)
-                ? bld_str_dup(ent->d_name)
-                : bld_str_fmt("%s/%s", base_dir, ent->d_name);
+                ? bld_str_dup(ent_name)
+                : bld_str_fmt("%s/%s", base_dir, ent_name);
             if (!bld_fs_is_file(bld_path(path))) continue;
-            if (fnmatch(match_pat, ent->d_name, 0) == 0) {
+            if (bld__fnmatch(match_pat, ent_name) == 0) {
                 bld_paths_push(&result, path);
             }
         }
-        closedir(d);
+        bld__closedir(&d);
     }
 
     /* sort for deterministic order across runs */
@@ -752,7 +899,7 @@ Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
                 /* match pattern against basename */
                 const char* base = strrchr(files.items[i], '/');
                 base = base ? base + 1 : files.items[i];
-                if (fnmatch(pat, base, 0) == 0) { skip = true; break; }
+                if (bld__fnmatch(pat, base) == 0) { skip = true; break; }
             } else if (strcmp(files.items[i], pat) == 0) {
                 /* exact match */
                 skip = true; break;
@@ -789,6 +936,66 @@ typedef struct {
     Bld_Path output_file;  /* tmp file with captured stdout+stderr, empty if not captured */
 } Bld_ProcResult;
 
+#ifdef _WIN32
+static Bld_ProcResult bld__subprocess_run(const char* cmd, const char* workdir, Bld_ProcFlags flags) {
+    Bld_ProcResult res = {.exit_code = -1, .output_file = bld_path("")};
+
+    HANDLE hOutFile = INVALID_HANDLE_VALUE;
+    if (!(flags & (BLD_PROC_SILENT | BLD_PROC_PASSTHRU))) {
+        char tmppath[MAX_PATH], tmpfile[MAX_PATH];
+        GetTempPathA(MAX_PATH, tmppath);
+        GetTempFileNameA(tmppath, "bld", 0, tmpfile);
+        SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
+        hOutFile = CreateFileA(tmpfile, GENERIC_WRITE, FILE_SHARE_READ, &sa,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hOutFile == INVALID_HANDLE_VALUE) return res;
+        /* convert backslashes in path for consistency */
+        char* dup = bld_arena_alloc(strlen(tmpfile) + 1);
+        strcpy(dup, tmpfile);
+        for (char* p = dup; *p; p++) if (*p == '\\') *p = '/';
+        res.output_file = bld_path(dup);
+    }
+
+    STARTUPINFOA si;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    if (flags & BLD_PROC_SILENT) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        HANDLE nul = CreateFileA("NUL", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        si.hStdOutput = nul;
+        si.hStdError  = nul;
+        si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+    } else if (hOutFile != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdOutput = hOutFile;
+        si.hStdError  = hOutFile;
+        si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+    }
+
+    /* wrap in cmd /c for shell interpretation */
+    const char* full_cmd = bld_str_fmt("cmd /c %s", cmd);
+    char* mut_cmd = bld_arena_alloc(strlen(full_cmd) + 1);
+    strcpy(mut_cmd, full_cmd);
+
+    PROCESS_INFORMATION pi;
+    memset(&pi, 0, sizeof(pi));
+    BOOL ok = CreateProcessA(NULL, mut_cmd, NULL, NULL, TRUE, 0, NULL, workdir, &si, &pi);
+    if (hOutFile != INVALID_HANDLE_VALUE) CloseHandle(hOutFile);
+
+    if (!ok) {
+        if (res.output_file.s[0]) unlink(res.output_file.s);
+        res.output_file = bld_path("");
+        return res;
+    }
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exitcode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitcode);
+    res.exit_code = (int)exitcode;
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return res;
+}
+#else
 static Bld_ProcResult bld__subprocess_run(const char* cmd, const char* workdir, Bld_ProcFlags flags) {
     Bld_ProcResult res = {.exit_code = -1, .output_file = bld_path("")};
 
@@ -824,16 +1031,17 @@ static Bld_ProcResult bld__subprocess_run(const char* cmd, const char* workdir, 
     res.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
     return res;
 }
+#endif
 
 /* stream file contents to stderr */
 static void bld__dump_to_stderr(Bld_Path path) {
     if (!path.s || !path.s[0]) return;
-    int fd = open(path.s, O_RDONLY);
-    if (fd < 0) return;
-    char buf[4096]; ssize_t n;
-    while ((n = read(fd, buf, sizeof(buf))) > 0)
-        (void)write(STDERR_FILENO, buf, (size_t)n);
-    close(fd);
+    FILE* f = fopen(path.s, "rb");
+    if (!f) return;
+    char buf[4096]; size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        fwrite(buf, 1, n, stderr);
+    fclose(f);
 }
 
 /* discard captured output */
@@ -850,9 +1058,14 @@ static void bld__proc_discard_output(Bld_ProcResult* r) {
 static int bld__has_in_path(const char* name) {
     const char* path_env = getenv("PATH");
     if (!path_env) return 0;
+#ifdef _WIN32
+    char path_sep = ';';
+#else
+    char path_sep = ':';
+#endif
     const char* p = path_env;
     while (*p) {
-        const char* sep = strchr(p, ':');
+        const char* sep = strchr(p, path_sep);
         size_t len = sep ? (size_t)(sep - p) : strlen(p);
         if (bld_fs_is_file(bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name)))) return 1;
         p += len + (sep ? 1 : 0);

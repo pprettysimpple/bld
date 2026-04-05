@@ -13,7 +13,48 @@
 #include <string.h>
 
 #ifdef _WIN32
-  #error "Windows support is not yet implemented"
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+  #include <direct.h>
+  #include <io.h>
+  #include <fcntl.h>
+  #include <sys/stat.h>
+  #include <process.h>
+
+  /* POSIX compat types/macros for MSVC */
+  typedef ptrdiff_t ssize_t;
+  #ifndef STDOUT_FILENO
+    #define STDOUT_FILENO 1
+  #endif
+  #ifndef STDERR_FILENO
+    #define STDERR_FILENO 2
+  #endif
+  #define stat    _stat64
+  #define fstat   _fstat64
+  #define open    _open
+  #define read    _read
+  #define write   _write
+  #define close   _close
+  #define unlink  _unlink
+  #define popen   _popen
+  #define pclose  _pclose
+  #define isatty  _isatty
+  #define fileno  _fileno
+  #define getcwd  _getcwd
+  #define chdir   _chdir
+  #define rmdir   _rmdir
+  #define chmod(p,m) ((void)0) /* no-op on Windows */
+  #define O_RDONLY _O_RDONLY
+  #define O_WRONLY _O_WRONLY
+  #define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+  #define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+  #ifndef EXDEV
+    #define EXDEV 18
+  #endif
+
+  /* Thread / sync abstraction */
+  typedef CRITICAL_SECTION     Bld_Mutex;
+  typedef CONDITION_VARIABLE   Bld_Cond;
 #else
   #include <dirent.h>
   #include <fcntl.h>
@@ -23,6 +64,38 @@
   #include <sys/stat.h>
   #include <sys/wait.h>
   #include <unistd.h>
+
+  /* Thread / sync abstraction */
+  typedef pthread_mutex_t      Bld_Mutex;
+  typedef pthread_cond_t       Bld_Cond;
+#endif
+
+/* ===== Platform abstraction: atomics ===== */
+
+#ifdef _MSC_VER
+  #define bld__atomic_fetch_add64(ptr, val)  InterlockedExchangeAdd64((volatile LONG64*)(ptr), (LONG64)(val))
+  #define bld__atomic_store32(ptr, val)      InterlockedExchange((volatile LONG*)(ptr), (LONG)(val))
+#else
+  #define bld__atomic_fetch_add64(ptr, val)  __atomic_fetch_add((ptr), (val), __ATOMIC_RELAXED)
+  #define bld__atomic_store32(ptr, val)      __atomic_store_n((ptr), (val), __ATOMIC_RELAXED)
+#endif
+
+/* ===== Platform abstraction: mutex / cond helpers ===== */
+
+#ifdef _WIN32
+  static inline void bld__mutex_init(Bld_Mutex* m)  { InitializeCriticalSection(m); }
+  static inline void bld__mutex_lock(Bld_Mutex* m)  { EnterCriticalSection(m); }
+  static inline void bld__mutex_unlock(Bld_Mutex* m){ LeaveCriticalSection(m); }
+  static inline void bld__cond_init(Bld_Cond* c)    { InitializeConditionVariable(c); }
+  static inline void bld__cond_wait(Bld_Cond* c, Bld_Mutex* m) { SleepConditionVariableCS(c, m, INFINITE); }
+  static inline void bld__cond_broadcast(Bld_Cond* c){ WakeAllConditionVariable(c); }
+#else
+  static inline void bld__mutex_init(Bld_Mutex* m)  { pthread_mutex_init(m, NULL); }
+  static inline void bld__mutex_lock(Bld_Mutex* m)  { pthread_mutex_lock(m); }
+  static inline void bld__mutex_unlock(Bld_Mutex* m){ pthread_mutex_unlock(m); }
+  static inline void bld__cond_init(Bld_Cond* c)    { pthread_cond_init(c, NULL); }
+  static inline void bld__cond_wait(Bld_Cond* c, Bld_Mutex* m) { pthread_cond_wait(c, m); }
+  static inline void bld__cond_broadcast(Bld_Cond* c){ pthread_cond_broadcast(c); }
 #endif
 
 /* ===== Arena ===== */
@@ -37,7 +110,7 @@ typedef struct {
     size_t capacity;
     char*  last_ptr;
     size_t last_size;
-    pthread_mutex_t mutex;
+    Bld_Mutex mutex;
 } Bld_Arena;
 
 Bld_Arena* bld_arena_get(void);
@@ -128,7 +201,12 @@ Bld_Paths bld_paths_merge(Bld_Paths a, Bld_Paths b);
 /* ===== Log ===== */
 
 void bld_log(const char* fmt, ...);
-void bld_panic(const char* fmt, ...) __attribute__((noreturn));
+#ifdef _MSC_VER
+  #define BLD_NORETURN __declspec(noreturn)
+#else
+  #define BLD_NORETURN __attribute__((noreturn))
+#endif
+BLD_NORETURN void bld_panic(const char* fmt, ...);
 
 /* structured log functions (color-aware, thread-safe) */
 void bld_log_progress(uint64_t current, uint64_t total, const char* name);
@@ -326,8 +404,8 @@ struct Bld_Step {
     bool          hash_valid;
     Bld_StepState state;
 
-    pthread_mutex_t mutex;
-    pthread_cond_t  cond;
+    Bld_Mutex mutex;
+    Bld_Cond  cond;
 };
 
 /* ===== LazyPath ===== */

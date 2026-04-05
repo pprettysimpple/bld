@@ -109,7 +109,7 @@ Bld_Path bld__target_artifact(Bld* b, Bld_Target* t) {
 }
 
 Bld_Path bld__cache_tmp(Bld* b) {
-    uint64_t id = __atomic_fetch_add(&bld__tmp_counter, 1, __ATOMIC_RELAXED);
+    uint64_t id = bld__atomic_fetch_add64(&bld__tmp_counter, 1);
     return bld_path_join(bld_path_join(b->cache, bld_path("tmp")), bld_path_fmt("%" PRIu64, id));
 }
 

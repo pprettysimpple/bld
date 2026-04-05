@@ -63,8 +63,14 @@ static void bld__parse_args(Bld* b) {
     s->passthrough = passthrough;
     s->targets = targets;
     if (s->max_jobs <= 0) {
+#ifdef _WIN32
+        SYSTEM_INFO si; GetSystemInfo(&si);
+        s->max_jobs = (int)si.dwNumberOfProcessors;
+        if (s->max_jobs <= 0) s->max_jobs = 1;
+#else
         long n = sysconf(_SC_NPROCESSORS_ONLN);
         s->max_jobs = n > 0 ? (int)n : 1;
+#endif
     }
     if (s->targets.count == 0) s->show_help = true;
 }
@@ -155,8 +161,7 @@ static int bld__handle_test(Bld* b) {
         bld_da_push(&to_build, b->tests.items[i].exe->exit);
     Bld_StepList order = bld__topo_sort(b, &to_build);
 
-    struct timespec t0;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
+    double t0 = bld__time_now();
     bld__build_steps(b, order);
 
     if (b->steps_failed > 0) {
@@ -169,10 +174,9 @@ static int bld__handle_test(Bld* b) {
     Bld_Path test_dir = bld_path_join(b->cache, bld_path("test-output"));
     bld_fs_mkdir_p(test_dir);
 
-    /* run tests — fork each, collect results */
+    /* run tests -- fork each, collect results */
     size_t passed = 0, failed = 0;
-    struct timespec test_t0;
-    clock_gettime(CLOCK_MONOTONIC, &test_t0);
+    double test_t0 = bld__time_now();
 
     for (size_t i = 0; i < b->tests.count; i++) {
         Bld_TestEntry* te = &b->tests.items[i];
@@ -186,14 +190,11 @@ static int bld__handle_test(Bld* b) {
 
         const char* workdir = (te->working_dir && te->working_dir[0]) ? te->working_dir : NULL;
 
-        struct timespec st0;
-        clock_gettime(CLOCK_MONOTONIC, &st0);
+        double st0 = bld__time_now();
 
         Bld_ProcResult r = bld__subprocess_run(cmd.items, workdir, BLD_PROC_DEFAULT);
 
-        struct timespec st1;
-        clock_gettime(CLOCK_MONOTONIC, &st1);
-        double elapsed = (double)(st1.tv_sec - st0.tv_sec) + (double)(st1.tv_nsec - st0.tv_nsec) / 1e9;
+        double elapsed = bld__time_now() - st0;
 
         /* save captured output as log file */
         if (r.output_file.s[0]) {
@@ -212,9 +213,7 @@ static int bld__handle_test(Bld* b) {
         }
     }
 
-    struct timespec test_t1;
-    clock_gettime(CLOCK_MONOTONIC, &test_t1);
-    double total = (double)(test_t1.tv_sec - test_t0.tv_sec) + (double)(test_t1.tv_nsec - test_t0.tv_nsec) / 1e9;
+    double total = bld__time_now() - test_t0;
 
     if (failed == 0)
         bld_log("%stests:%s %zu passed, %.2fs\n", bld__c(BLD_C_GREEN), bld__c(BLD_C_RESET), passed, total);
@@ -252,9 +251,15 @@ static void bld__recompile_if_needed(Bld* b) {
     bld__proc_discard_output(&r);
     const char* hs = bld_str_fmt("%" PRIu64, h.value);
     bld_fs_write_file(hp, hs, strlen(hs));
+#ifdef _WIN32
+    /* Windows: use _spawnv to re-exec, then exit current process */
+    intptr_t rc = _spawnv(_P_WAIT, b->argv[0], (const char* const*)b->argv);
+    exit((int)rc);
+#else
     execv(b->argv[0], b->argv);
     bld_fs_remove(hp);
     bld_panic("execv failed: %s\n", strerror(errno));
+#endif
 }
 
 /* ---- Init stages ---- */
