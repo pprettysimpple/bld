@@ -876,6 +876,199 @@ static const char* bld__resolve_cxx_standard(Bld_CxxStd s) {
 }
 
 /* ================================================================
+ *  MSVC toolchain
+ * ================================================================ */
+
+static const char* bld__msvc_resolve_optimize(Bld_Optimize o) {
+    switch (o) {
+        case BLD_OPT_DEFAULT: return "";
+        case BLD_OPT_O0: return "/Od";
+        case BLD_OPT_O1: return "/O1";
+        case BLD_OPT_O2: case BLD_OPT_O3: case BLD_OPT_OFAST: return "/O2";
+        case BLD_OPT_Os: return "/O1";
+    }
+    return "";
+}
+
+static const char* bld__msvc_resolve_c_standard(Bld_CStd s) {
+    switch (s) {
+        case BLD_C_DEFAULT: return "";
+        case BLD_C_90: case BLD_C_99: return "";  /* MSVC has no c90/c99 mode */
+        case BLD_C_11: case BLD_C_GNU11: return "/std:c11";
+        case BLD_C_17: case BLD_C_GNU17: return "/std:c17";
+        case BLD_C_23: case BLD_C_GNU23: return "/std:c23";
+        case BLD_C_GNU90: case BLD_C_GNU99: return "";
+    }
+    return "";
+}
+
+static const char* bld__msvc_resolve_cxx_standard(Bld_CxxStd s) {
+    switch (s) {
+        case BLD_CXX_DEFAULT: return "";
+        case BLD_CXX_11: return "";  /* MSVC has no explicit c++11 mode */
+        case BLD_CXX_14: case BLD_CXX_GNU14: return "/std:c++14";
+        case BLD_CXX_17: case BLD_CXX_GNU17: return "/std:c++17";
+        case BLD_CXX_20: case BLD_CXX_GNU20: return "/std:c++20";
+        case BLD_CXX_23: case BLD_CXX_GNU23: return "/std:c++latest";
+        case BLD_CXX_GNU11: return "";
+    }
+    return "";
+}
+
+/*
+ * MSVC render_compile: produces the FULL cl.exe compile command.
+ *
+ * Flag order:
+ *   cl /nologo [/Od|/O1|/O2] [/std:c11|/std:c17] [/W3|/w]
+ *   [/DFOO /DBAR=1] [/I path] [/external:I path /external:W0]
+ *   [/Zi] [/fsanitize=address] [/GL]
+ *   [extra_flags] [extra_cflags]
+ *   /c "source.c" /Fo:"output.obj"
+ *   [/showIncludes]
+ */
+static void bld__msvc_render_compile(Bld_Cmd* cmd, Bld_CompileCmd c) {
+    bld_cmd_appendf(cmd, "%s /nologo", c.driver);
+
+    /* optimization */
+    const char* os = bld__msvc_resolve_optimize(c.optimize);
+    if (os[0]) bld_cmd_appendf(cmd, " %s", os);
+
+    /* language standard */
+    const char* ss = "";
+    if (c.lang == BLD_LANG_C) ss = bld__msvc_resolve_c_standard(c.c_std);
+    else if (c.lang == BLD_LANG_CXX) ss = bld__msvc_resolve_cxx_standard(c.cxx_std);
+    if (ss[0]) bld_cmd_appendf(cmd, " %s", ss);
+
+    /* warnings */
+    if (c.warnings) bld_cmd_appendf(cmd, " /W3");
+    if (!c.warnings) bld_cmd_appendf(cmd, " /w");
+
+    /* extra compile flags (from CompileFlags.extra_flags) */
+    if (c.extra_flags && c.extra_flags[0]) bld_cmd_appendf(cmd, " %s", c.extra_flags);
+
+    /* defines */
+    for (size_t i = 0; i < c.defines.count; i++) {
+        const char* d = c.defines.items[i];
+        for (const char* p = d; *p; p++)
+            if (*p == ' ' || *p == '"' || *p == '\'')
+                bld_panic("define '%s' contains special characters; "
+                          "use a generated header instead\n", d);
+        bld_cmd_appendf(cmd, " /D%s", d);
+    }
+
+    /* include dirs */
+    for (size_t i = 0; i < c.include_dirs.count; i++)
+        bld_cmd_appendf(cmd, " /I\"%s\"", c.include_dirs.items[i]);
+
+    /* system include dirs */
+    for (size_t i = 0; i < c.sys_include_dirs.count; i++)
+        bld_cmd_appendf(cmd, " /external:I\"%s\" /external:W0", c.sys_include_dirs.items[i]);
+
+    /* debug/sanitizer/lto */
+    if (c.debug_info) bld_cmd_appendf(cmd, " /Zi");
+    if (c.asan) bld_cmd_appendf(cmd, " /fsanitize=address");
+    if (c.lto) bld_cmd_appendf(cmd, " /GL");
+
+    /* PIC: not applicable on Windows, skip */
+
+    /* extra cflags (merged from resolved link deps) */
+    if (c.extra_cflags && c.extra_cflags[0]) bld_cmd_appendf(cmd, " %s", c.extra_cflags);
+
+    /* source file (quoted) */
+    bld_cmd_appendf(cmd, " /c \"%s\"", c.source);
+
+    /* output */
+    bld_cmd_appendf(cmd, " /Fo:\"%s\"", c.output);
+
+    /* dependency tracking via /showIncludes */
+    if (c.depfile && c.depfile[0])
+        bld_cmd_appendf(cmd, " /showIncludes");
+}
+
+/*
+ * MSVC render_link: uses cl.exe as linker driver.
+ *
+ *   cl /nologo obj1.obj obj2.obj /Fe:"output.exe"
+ *      /link [/DEBUG] [/LTCG] [/DLL]
+ *      [/LIBPATH:"path"] [name.lib]
+ *      [extra_ldflags]
+ */
+static void bld__msvc_render_link(Bld_Cmd* cmd, Bld_LinkCmd c) {
+    bld_cmd_appendf(cmd, "%s /nologo", c.driver);
+
+    /* obj paths */
+    for (size_t i = 0; i < c.obj_paths.count; i++)
+        bld_cmd_appendf(cmd, " \"%s\"", c.obj_paths.items[i]);
+
+    /* output */
+    bld_cmd_appendf(cmd, " /Fe:\"%s\"", c.output);
+
+    /* linker flags after /link */
+    bld_cmd_appendf(cmd, " /link");
+
+    if (c.debug_info) bld_cmd_appendf(cmd, " /DEBUG");
+    if (c.lto) bld_cmd_appendf(cmd, " /LTCG");
+
+    if (c.shared) {
+        bld_cmd_appendf(cmd, " /DLL");
+        /* generate import library alongside the DLL */
+        const char* out_base = c.output;
+        const char* dot = strrchr(out_base, '.');
+        if (dot) {
+            size_t base_len = (size_t)(dot - out_base);
+            char* implib = bld_arena_alloc(base_len + 5);
+            memcpy(implib, out_base, base_len);
+            memcpy(implib + base_len, ".lib", 5);
+            bld_cmd_appendf(cmd, " /IMPLIB:\"%s\"", implib);
+        }
+        /* soname: not applicable on Windows */
+    }
+
+    /* lib dirs */
+    for (size_t i = 0; i < c.lib_dirs.count; i++)
+        bld_cmd_appendf(cmd, " /LIBPATH:\"%s\"", c.lib_dirs.items[i]);
+
+    /* lib names (append .lib) */
+    for (size_t i = 0; i < c.lib_names.count; i++)
+        bld_cmd_appendf(cmd, " %s.lib", c.lib_names.items[i]);
+
+    /* extra link flags */
+    if (c.extra_ldflags && c.extra_ldflags[0])
+        bld_cmd_appendf(cmd, " %s", c.extra_ldflags);
+}
+
+/*
+ * MSVC render_archive: produces "lib /nologo /OUT:"output.lib" obj1.obj obj2.obj"
+ */
+static void bld__msvc_render_archive(Bld_Cmd* cmd, const char* tool, const char* output, Bld_Paths obj_paths) {
+    bld_cmd_appendf(cmd, "%s /nologo /OUT:\"%s\"", tool, output);
+    for (size_t i = 0; i < obj_paths.count; i++)
+        bld_cmd_appendf(cmd, " \"%s\"", obj_paths.items[i]);
+}
+
+Bld_Toolchain* bld_toolchain_msvc(void) {
+    Bld_Toolchain* tc = bld_arena_alloc(sizeof(Bld_Toolchain));
+    memset(tc, 0, sizeof(*tc));
+    tc->name = "msvc";
+    tc->os = BLD_OS_WINDOWS;
+
+    tc->obj_ext = "obj";
+    tc->exe_ext = ".exe";
+    tc->static_lib_prefix = "";
+    tc->static_lib_ext = "lib";
+    tc->shared_lib_prefix = "";
+    tc->shared_lib_ext = "dll";
+
+    tc->render_compile = bld__msvc_render_compile;
+    tc->render_link    = bld__msvc_render_link;
+    tc->render_archive = bld__msvc_render_archive;
+
+    tc->archiver = (Bld_Tool){.driver = "lib", .available = true};
+
+    return tc;
+}
+
+/* ================================================================
  *  GCC toolchain factory
  * ================================================================ */
 

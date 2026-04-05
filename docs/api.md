@@ -441,6 +441,11 @@ Bld_Toolchain* tc = bld_toolchain_gcc(BLD_OS_LINUX);
 b->toolchain = tc;  // set as default for all targets
 ```
 
+```c
+Bld_Toolchain* tc = bld_toolchain_msvc();
+b->toolchain = tc;  // MSVC cl.exe/lib.exe toolchain (Windows)
+```
+
 OS targets: `BLD_OS_LINUX`, `BLD_OS_MACOS`, `BLD_OS_WINDOWS`, `BLD_OS_FREEBSD`.
 
 Per-target override:

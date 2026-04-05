@@ -352,6 +352,7 @@ struct Bld_Toolchain {
 };
 
 Bld_Toolchain* bld_toolchain_gcc(Bld_OsTarget os);
+Bld_Toolchain* bld_toolchain_msvc(void);
 
 /* ===== Step — low-level graph node ===== */
 

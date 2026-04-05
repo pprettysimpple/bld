@@ -376,6 +376,61 @@ static void bld__render_obj_cmd(Bld_Cmd* cmd, Bld__ObjCtx* c) {
     c->b->toolchain->render_compile(cmd, cc);
 }
 
+/*
+ * Parse /showIncludes output from MSVC and write a gcc-compatible depfile.
+ * Lines matching "Note: including file: <path>" are extracted as dependencies.
+ * Returns true if depfile was written.
+ */
+static bool bld__parse_show_includes(Bld_Path output_file, Bld_Path depfile, const char* source) {
+    if (!output_file.s || !output_file.s[0]) return false;
+    if (!depfile.s || !depfile.s[0]) return false;
+
+    size_t len;
+    const char* content = bld_fs_read_file(output_file, &len);
+    if (!content || len == 0) return false;
+
+    /* Parse "Note: including file:" lines (MSVC English locale) */
+    Bld_Cmd dep_content = {0};
+    bld_cmd_appendf(&dep_content, "%s:", source);
+
+    const char* p = content;
+    const char* end = content + len;
+    bool found_any = false;
+    while (p < end) {
+        const char* nl = memchr(p, '\n', (size_t)(end - p));
+        size_t line_len = nl ? (size_t)(nl - p) : (size_t)(end - p);
+
+        /* check for "Note: including file:" prefix */
+        const char* prefix = "Note: including file:";
+        size_t prefix_len = 21;
+        if (line_len > prefix_len && strncmp(p, prefix, prefix_len) == 0) {
+            /* skip prefix and leading whitespace */
+            const char* path = p + prefix_len;
+            size_t path_len = line_len - prefix_len;
+            while (path_len > 0 && (*path == ' ' || *path == '\t')) {
+                path++; path_len--;
+            }
+            /* strip trailing \r */
+            while (path_len > 0 && path[path_len - 1] == '\r') path_len--;
+            if (path_len > 0) {
+                char* dep = bld_arena_alloc(path_len + 1);
+                memcpy(dep, path, path_len);
+                dep[path_len] = '\0';
+                bld_cmd_appendf(&dep_content, " \\\n  %s", dep);
+                found_any = true;
+            }
+        }
+
+        p += line_len + (nl ? 1 : 0);
+    }
+
+    if (found_any) {
+        bld_cmd_appendf(&dep_content, "\n");
+        bld_fs_write_file(depfile, dep_content.items, dep_content.count);
+    }
+    return found_any;
+}
+
 static Bld_ActionResult bld__obj_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     Bld__ObjCtx* c = ctx;
     Bld_Toolchain* tc = c->b->toolchain;
@@ -384,7 +439,14 @@ static Bld_ActionResult bld__obj_action(void* ctx, Bld_Path output, Bld_Path dep
     tc->render_compile(&cmd, cc);
     if (c->b->settings.verbose) bld_log_action("compile: %s\n", cmd.items);
     Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
-    if (r.exit_code == 0) { bld__proc_discard_output(&r); return BLD_ACTION_OK; }
+    if (r.exit_code == 0) {
+        /* For MSVC: parse /showIncludes output and write gcc-compatible depfile */
+        if (strcmp(tc->name, "msvc") == 0 && depfile.s && depfile.s[0]) {
+            bld__parse_show_includes(r.output_file, depfile, cc.source);
+        }
+        bld__proc_discard_output(&r);
+        return BLD_ACTION_OK;
+    }
     return (Bld_ActionResult){r.exit_code, r.output_file};
 }
 
@@ -532,27 +594,51 @@ static Bld_CompileCmd bld__build_compile_cmd(Bld__ObjCtx* c, Bld_Path output, Bl
     bool asan = bld__toggle_val(c->b->build_flags.asan, BLD_UNSET);
     bool lto  = bld__toggle_val(c->b->build_flags.lto,  BLD_UNSET);
 
-    /* Build extra_cflags: target include_dirs (quoted) + compile_pub from resolved link deps. */
-    Bld_Cmd ecf = {0};
+    /* Merge include_dirs: flags + target include_dirs (lazy) + compile_pub from resolved link deps */
+    Bld_Paths all_include_dirs = {0};
+    for (size_t i = 0; i < flags.include_dirs.count; i++)
+        bld_paths_push(&all_include_dirs, flags.include_dirs.items[i]);
     for (size_t i = 0; i < c->parent->include_dirs.count; i++) {
         Bld_Path dir = bld__resolve_lazy(c->b, c->parent->include_dirs.items[i]);
-        bld_cmd_appendf(&ecf, " -I\"%s\"", dir.s);
+        bld_paths_push(&all_include_dirs, dir.s);
     }
     for (size_t i = 0; i < c->parent->resolved_link_deps.count; i++) {
         Bld_CompileFlags* pub = bld__get_compile_pub(c->parent->resolved_link_deps.items[i]);
         if (!pub) continue;
         for (size_t j = 0; j < pub->include_dirs.count; j++)
-            bld_cmd_appendf(&ecf, " -I%s", pub->include_dirs.items[j]);
+            bld_paths_push(&all_include_dirs, pub->include_dirs.items[j]);
+    }
+
+    /* Merge sys_include_dirs: flags + compile_pub from resolved link deps */
+    Bld_Paths all_sys_include_dirs = {0};
+    for (size_t i = 0; i < flags.system_include_dirs.count; i++)
+        bld_paths_push(&all_sys_include_dirs, flags.system_include_dirs.items[i]);
+    for (size_t i = 0; i < c->parent->resolved_link_deps.count; i++) {
+        Bld_CompileFlags* pub = bld__get_compile_pub(c->parent->resolved_link_deps.items[i]);
+        if (!pub) continue;
         for (size_t j = 0; j < pub->system_include_dirs.count; j++)
-            bld_cmd_appendf(&ecf, " -isystem %s", pub->system_include_dirs.items[j]);
-        /* emit defines from compile_pub */
+            bld_paths_push(&all_sys_include_dirs, pub->system_include_dirs.items[j]);
+    }
+
+    /* Merge defines: global + flags + compile_pub from resolved link deps */
+    Bld_Strs all_defines = c->b->global_defines.count
+                           ? bld_strs_merge(c->b->global_defines, flags.defines)
+                           : flags.defines;
+    for (size_t i = 0; i < c->parent->resolved_link_deps.count; i++) {
+        Bld_CompileFlags* pub = bld__get_compile_pub(c->parent->resolved_link_deps.items[i]);
+        if (!pub) continue;
         for (size_t j = 0; j < pub->defines.count; j++)
-            bld_cmd_appendf(&ecf, " -D%s", pub->defines.items[j]);
+            bld_strs_push(&all_defines, pub->defines.items[j]);
+    }
+
+    /* Build extra_cflags from compile_pub extra_flags (toolchain-agnostic raw flags) */
+    Bld_Cmd ecf = {0};
+    for (size_t i = 0; i < c->parent->resolved_link_deps.count; i++) {
+        Bld_CompileFlags* pub = bld__get_compile_pub(c->parent->resolved_link_deps.items[i]);
+        if (!pub) continue;
         if (pub->extra_flags && pub->extra_flags[0])
             bld_cmd_appendf(&ecf, " %s", pub->extra_flags);
     }
-    /* ecf.items starts with a leading space if non-empty; the render function
-       checks [0] before appending, so we skip the leading space */
     const char* extra_cflags_str = (ecf.count > 0) ? ecf.items + 1 : NULL;
 
     Bld_CompileCmd result = {0};
@@ -567,11 +653,9 @@ static Bld_CompileCmd bld__build_compile_cmd(Bld__ObjCtx* c, Bld_Path output, Bl
     result.asan        = asan;
     result.lto         = lto;
     result.extra_flags = flags.extra_flags;
-    result.defines          = c->b->global_defines.count
-                              ? bld_strs_merge(c->b->global_defines, flags.defines)
-                              : flags.defines;
-    result.include_dirs     = flags.include_dirs;
-    result.sys_include_dirs = flags.system_include_dirs;
+    result.defines          = all_defines;
+    result.include_dirs     = all_include_dirs;
+    result.sys_include_dirs = all_sys_include_dirs;
     result.extra_cflags     = extra_cflags_str;
     result.source      = bld__obj_source(c).s;
     result.output      = output.s;
@@ -614,19 +698,31 @@ static Bld_LinkCmd bld__build_link_cmd_exe(Bld* b, Bld_Exe* exe, Bld_Path output
     if (exe->shared_libs.count > 0)
         bld_paths_push(&rpaths, "$ORIGIN/../lib");
 
-    /* merge extra_ldflags from opts.link.libs/lib_dirs + resolved link deps + opts.link.extra_flags */
-    Bld_Cmd ldf = {0};
+    /* merge lib_dirs: shared_libs + opts.link.lib_dirs + resolved link deps */
     for (size_t i = 0; i < exe->opts.link.lib_dirs.count; i++)
-        bld_cmd_appendf(&ldf, " -L%s", exe->opts.link.lib_dirs.items[i]);
-    for (size_t i = 0; i < exe->opts.link.libs.count; i++)
-        bld_cmd_appendf(&ldf, " -l%s", exe->opts.link.libs.items[i]);
+        bld_paths_push(&lib_dirs, exe->opts.link.lib_dirs.items[i]);
     for (size_t i = 0; i < exe->target.resolved_link_deps.count; i++) {
         Bld_LinkFlags* pub = bld__get_link_pub(exe->target.resolved_link_deps.items[i]);
         if (!pub) continue;
         for (size_t j = 0; j < pub->lib_dirs.count; j++)
-            bld_cmd_appendf(&ldf, " -L%s", pub->lib_dirs.items[j]);
+            bld_paths_push(&lib_dirs, pub->lib_dirs.items[j]);
+    }
+
+    /* merge lib_names: shared_libs + opts.link.libs + resolved link deps */
+    for (size_t i = 0; i < exe->opts.link.libs.count; i++)
+        bld_strs_push(&lib_names, exe->opts.link.libs.items[i]);
+    for (size_t i = 0; i < exe->target.resolved_link_deps.count; i++) {
+        Bld_LinkFlags* pub = bld__get_link_pub(exe->target.resolved_link_deps.items[i]);
+        if (!pub) continue;
         for (size_t j = 0; j < pub->libs.count; j++)
-            bld_cmd_appendf(&ldf, " -l%s", pub->libs.items[j]);
+            bld_strs_push(&lib_names, pub->libs.items[j]);
+    }
+
+    /* extra_ldflags: only raw extra_flags from resolved link deps + opts */
+    Bld_Cmd ldf = {0};
+    for (size_t i = 0; i < exe->target.resolved_link_deps.count; i++) {
+        Bld_LinkFlags* pub = bld__get_link_pub(exe->target.resolved_link_deps.items[i]);
+        if (!pub) continue;
         if (pub->extra_flags && pub->extra_flags[0])
             bld_cmd_appendf(&ldf, " %s", pub->extra_flags);
     }

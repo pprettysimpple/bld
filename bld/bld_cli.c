@@ -270,32 +270,48 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
     if (!bld__has_in_path(cc) && !cc_env)
         bld_panic("C compiler '%s' not found in PATH\n", cc);
 
-    /* Detect target OS from compiler triple */
-    const char* dumpmachine_cmd = bld_str_fmt("%s -dumpmachine 2>/dev/null", cc);
-    FILE* dm = popen(dumpmachine_cmd, "r");
-    Bld_OsTarget target_os;
-    if (dm) {
-        char triple[256] = {0};
-        if (fgets(triple, sizeof(triple), dm)) {
-            size_t n = strlen(triple);
-            if (n > 0 && triple[n-1] == '\n') triple[n-1] = '\0';
-        }
-        pclose(dm);
-        target_os = triple[0] ? bld__detect_os_from_triple(triple) : BLD__HOST_OS;
-    } else {
-        target_os = BLD__HOST_OS;
-    }
+    /* Detect MSVC: check if compiler basename is exactly "cl" or "cl.exe" */
+    const char* cc_base = bld_path_filename(bld_path(cc));
+    bool is_msvc = (strcmp(cc_base, "cl") == 0 || strcmp(cc_base, "cl.exe") == 0);
 
-    /* Create toolchain with detected tools */
-    b->toolchain = bld_toolchain_gcc(target_os);
-    b->toolchain->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
-                                      .identity_hash = bld__make_identity_hash(cc), .available = true};
-    b->toolchain->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cxx,
-                                      .identity_hash = bld__make_identity_hash(cxx),
-                                      .available = bld__has_in_path(cxx) || cxx_env != NULL};
-    b->toolchain->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
-                                      .identity_hash = bld__make_identity_hash(as_drv), .available = true};
-    b->toolchain->sysinclude_hash = bld__sysinclude_hash(cc);
+    if (is_msvc) {
+        /* MSVC toolchain — cl.exe as both compiler and linker driver */
+        b->toolchain = bld_toolchain_msvc();
+        b->toolchain->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
+                                          .identity_hash = bld__make_identity_hash(cc), .available = true};
+        b->toolchain->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cc,
+                                          .identity_hash = bld__make_identity_hash(cc), .available = true};
+        b->toolchain->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
+                                          .identity_hash = bld__make_identity_hash(as_drv),
+                                          .available = as_env != NULL};
+    } else {
+        /* GCC/Clang toolchain */
+        /* Detect target OS from compiler triple */
+        const char* dumpmachine_cmd = bld_str_fmt("%s -dumpmachine 2>/dev/null", cc);
+        FILE* dm = popen(dumpmachine_cmd, "r");
+        Bld_OsTarget target_os;
+        if (dm) {
+            char triple[256] = {0};
+            if (fgets(triple, sizeof(triple), dm)) {
+                size_t n = strlen(triple);
+                if (n > 0 && triple[n-1] == '\n') triple[n-1] = '\0';
+            }
+            pclose(dm);
+            target_os = triple[0] ? bld__detect_os_from_triple(triple) : BLD__HOST_OS;
+        } else {
+            target_os = BLD__HOST_OS;
+        }
+
+        b->toolchain = bld_toolchain_gcc(target_os);
+        b->toolchain->compilers[0] = (Bld_Compiler){.lang = BLD_LANG_C, .driver = cc,
+                                          .identity_hash = bld__make_identity_hash(cc), .available = true};
+        b->toolchain->compilers[1] = (Bld_Compiler){.lang = BLD_LANG_CXX, .driver = cxx,
+                                          .identity_hash = bld__make_identity_hash(cxx),
+                                          .available = bld__has_in_path(cxx) || cxx_env != NULL};
+        b->toolchain->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
+                                          .identity_hash = bld__make_identity_hash(as_drv), .available = true};
+        b->toolchain->sysinclude_hash = bld__sysinclude_hash(cc);
+    }
     b->global_warnings = true;
 }
 
