@@ -30,10 +30,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compile with MSVC
+      - name: Compile bld.h with MSVC
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           echo #define BLD_IMPLEMENTATION > _ci_test.c
           echo #include "bld.h" >> _ci_test.c
           cl /std:c11 /W0 /c /I. _ci_test.c
+
+  windows-mingw:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc make curl tar
+
+      - uses: actions/checkout@v4
+
+      - name: Build bld
+        run: gcc -std=c11 -w build.c -o b.exe -lpthread && ./b.exe amalgamate
+
+      - name: Showcase curl
+        run: |
+          cd showcase/01_curl && bash fetch-source.sh
+          gcc -std=c11 -w build.c -o b.exe -lpthread && ./b.exe build -j4
+          ./build/bin/curl.exe --version
+
+      - name: Showcase libuv
+        run: |
+          cd showcase/02_libuv && bash fetch-source.sh
+          gcc -std=c11 -w build.c -o b.exe -lpthread && ./b.exe build -j4
