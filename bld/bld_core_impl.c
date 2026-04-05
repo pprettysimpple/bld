@@ -773,17 +773,7 @@ static inline Bld_ProcResult bld__subprocess_run(const char* cmd, const char* wo
  * ================================================================ */
 
 static int bld__has_in_path(const char* name) {
-    const char* path_env = getenv("PATH");
-    if (!path_env) return 0;
-    char path_sep = bld_plat_path_list_sep();
-    const char* p = path_env;
-    while (*p) {
-        const char* sep = strchr(p, path_sep);
-        size_t len = sep ? (size_t)(sep - p) : strlen(p);
-        if (bld_fs_is_file(bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name)))) return 1;
-        p += len + (sep ? 1 : 0);
-    }
-    return 0;
+    return bld_plat_find_binary(name) != NULL;
 }
 
 /* capture first line of "driver --version" output, return hash */

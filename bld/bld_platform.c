@@ -332,6 +332,35 @@ static char bld_plat_path_list_sep(void) { return ':'; }
 #endif
 
 /* ================================================================
+ *  PATH lookup
+ * ================================================================ */
+
+/* find exact name in PATH — no extension magic */
+static const char* bld_plat_find_in_path(const char* name) {
+    const char* path_env = getenv("PATH");
+    if (!path_env) return NULL;
+    char sep = bld_plat_path_list_sep();
+    const char* p = path_env;
+    while (*p) {
+        const char* s = strchr(p, sep);
+        size_t len = s ? (size_t)(s - p) : strlen(p);
+        Bld_Path full = bld_path(bld_str_fmt("%.*s/%s", (int)len, p, name));
+        if (bld_fs_is_file(full)) return full.s;
+        p += len + (s ? 1 : 0);
+    }
+    return NULL;
+}
+
+/* find executable binary in PATH — adds .exe on Windows */
+static const char* bld_plat_find_binary(const char* name) {
+#ifdef _WIN32
+    return bld_plat_find_in_path(bld_str_fmt("%s.exe", name));
+#else
+    return bld_plat_find_in_path(name);
+#endif
+}
+
+/* ================================================================
  *  Timer
  * ================================================================ */
 
