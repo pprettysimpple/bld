@@ -384,10 +384,8 @@ static Bld_ActionResult bld__obj_action(void* ctx, Bld_Path output, Bld_Path dep
     tc->render_compile(&cmd, cc);
     if (c->b->settings.verbose) bld_log_action("compile: %s\n", cmd.items);
     Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
-    if (r.exit_code != 0) bld__proc_print_output(&r);
-    else bld__proc_discard_output(&r);
-    int rc = r.exit_code;
-    return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
+    if (r.exit_code == 0) { bld__proc_discard_output(&r); return BLD_ACTION_OK; }
+    return (Bld_ActionResult){r.exit_code, r.output_file};
 }
 
 static Bld_Hash bld__obj_recipe_hash(void* ctx, Bld_Hash h) {
@@ -669,10 +667,8 @@ static Bld_ActionResult bld__link_exe_action(void* ctx, Bld_Path output, Bld_Pat
     tc->render_link(&cmd, lc);
     if (c->b->settings.verbose) bld_log_action("link exe: %s\n", cmd.items);
     Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
-    if (r.exit_code != 0) bld__proc_print_output(&r);
-    else bld__proc_discard_output(&r);
-    int rc = r.exit_code;
-    return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
+    if (r.exit_code == 0) { bld__proc_discard_output(&r); return BLD_ACTION_OK; }
+    return (Bld_ActionResult){r.exit_code, r.output_file};
 }
 
 static Bld_Hash bld__link_exe_recipe(void* ctx, Bld_Hash h) {
@@ -786,10 +782,8 @@ static Bld_ActionResult bld__link_lib_action(void* ctx, Bld_Path output, Bld_Pat
     }
     if (c->b->settings.verbose) bld_log_action("link lib: %s\n", cmd.items);
     Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
-    if (r.exit_code != 0) bld__proc_print_output(&r);
-    else bld__proc_discard_output(&r);
-    int rc = r.exit_code;
-    return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
+    if (r.exit_code == 0) { bld__proc_discard_output(&r); return BLD_ACTION_OK; }
+    return (Bld_ActionResult){r.exit_code, r.output_file};
 }
 
 static Bld_Hash bld__link_lib_recipe(void* ctx, Bld_Hash h) {
@@ -921,11 +915,8 @@ static Bld_ActionResult bld__cmd_action(void* ctx, Bld_Path output, Bld_Path dep
     (void)output; (void)depfile;
     Bld__CmdCtx* c = ctx;
     Bld_ProcResult r = bld__subprocess_run(c->cmd, NULL, BLD_PROC_DEFAULT);
-    if (r.exit_code != 0) bld__proc_print_output(&r);
-    else bld__proc_discard_output(&r);
-    int rc = r.exit_code;
-    if (rc != 0) return BLD_ACTION_FAILED;
-    return BLD_ACTION_OK;
+    if (r.exit_code == 0) { bld__proc_discard_output(&r); return BLD_ACTION_OK; }
+    return (Bld_ActionResult){r.exit_code, r.output_file};
 }
 
 static Bld_Hash bld__cmd_hash(void* ctx, Bld_Hash h) {
@@ -967,7 +958,7 @@ static Bld_ActionResult bld__run_action(void* ctx, Bld_Path output, Bld_Path dep
     const char* workdir = (c->opts.working_dir && c->opts.working_dir[0]) ? c->opts.working_dir : NULL;
     Bld_ProcResult r = bld__subprocess_run(cmd.items, workdir, BLD_PROC_PASSTHRU);
     int rc = r.exit_code;
-    if (rc != 0) return BLD_ACTION_FAILED;
+    if (rc != 0) return BLD_ACTION_FAIL;
     return BLD_ACTION_OK;
 }
 

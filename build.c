@@ -103,7 +103,7 @@ static Bld_ActionResult run_selftests(void* ctx, Bld_Path output, Bld_Path depfi
     Bld* b = ctx;
     const char* cmd = bld_str_fmt("bash \"%s/tests/run_all.sh\" \"%s\"", b->root.s, b->root.s);
     Bld_ProcResult r = bld__subprocess_run(cmd, NULL, BLD_PROC_PASSTHRU);
-    return r.exit_code == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
+    return r.exit_code == 0 ? BLD_ACTION_OK : BLD_ACTION_FAIL;
 }
 
 /* ---- Configure ---- */

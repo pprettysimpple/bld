@@ -246,7 +246,7 @@ static void bld__recompile_if_needed(Bld* b) {
     const char* recompile_cmd_str = bld_str_fmt("%s -o \"%s\"", bld_recompile_cmd, b->argv[0]);
     Bld_ProcResult r = bld__subprocess_run(recompile_cmd_str, NULL, BLD_PROC_DEFAULT);
     if (r.exit_code != 0) {
-        bld__proc_print_output(&r);
+        bld__dump_to_stderr(r.output_file);
         bld_panic("failed to recompile build tool\n");
     }
     bld__proc_discard_output(&r);

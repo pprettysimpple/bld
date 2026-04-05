@@ -86,10 +86,16 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
     Bld_Path tmp_dep = step->has_depfile ? bld__cache_tmp(b) : bld_path("");
     Bld_ActionResult result = step->action(step->action_ctx, tmp_out, tmp_dep);
 
-    if (result != BLD_ACTION_OK) {
-        if (!b->settings.silent && step->name[0])
-            fprintf(stderr, "%sFAILED:%s %s\n",
+    if (result.status != 0) {
+        if (!b->settings.silent && step->name[0]) {
+            pthread_mutex_lock(&bld__log_mutex);
+            fprintf(stderr, "\n%sFAILED:%s %s\n",
                     bld__c(BLD_C_RED), bld__c(BLD_C_RESET), step->name);
+            bld__dump_to_stderr(result.output_file);
+            if (result.output_file.s && result.output_file.s[0])
+                fprintf(stderr, "  full output: %s\n", result.output_file.s);
+            pthread_mutex_unlock(&bld__log_mutex);
+        }
         __atomic_fetch_add(&b->steps_failed, 1, __ATOMIC_RELAXED);
         bld__step_set_state(step, BLD_STEP_FAILED);
         return;

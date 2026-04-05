@@ -825,23 +825,20 @@ static Bld_ProcResult bld__subprocess_run(const char* cmd, const char* workdir, 
     return res;
 }
 
-/* stream captured output to stderr, then unlink tmp file */
-static void bld__proc_print_output(Bld_ProcResult* r) {
-    if (!r->output_file.s[0]) return;
-    int fd = open(r->output_file.s, O_RDONLY);
-    if (fd >= 0) {
-        char buf[4096]; ssize_t n;
-        while ((n = read(fd, buf, sizeof(buf))) > 0)
-            (void)write(STDERR_FILENO, buf, (size_t)n);
-        close(fd);
-    }
-    unlink(r->output_file.s);
-    r->output_file = bld_path("");
+/* stream file contents to stderr */
+static void bld__dump_to_stderr(Bld_Path path) {
+    if (!path.s || !path.s[0]) return;
+    int fd = open(path.s, O_RDONLY);
+    if (fd < 0) return;
+    char buf[4096]; ssize_t n;
+    while ((n = read(fd, buf, sizeof(buf))) > 0)
+        (void)write(STDERR_FILENO, buf, (size_t)n);
+    close(fd);
 }
 
 /* discard captured output */
 static void bld__proc_discard_output(Bld_ProcResult* r) {
-    if (!r->output_file.s[0]) return;
+    if (!r->output_file.s || !r->output_file.s[0]) return;
     unlink(r->output_file.s);
     r->output_file = bld_path("");
 }

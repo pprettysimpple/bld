@@ -280,7 +280,14 @@ Bld_Toolchain* bld_toolchain_gcc(Bld_OsTarget os);
 typedef struct Bld_Step Bld_Step;
 typedef struct Bld_Target Bld_Target;
 
-typedef enum { BLD_ACTION_OK = 0, BLD_ACTION_FAILED = 1 } Bld_ActionResult;
+typedef struct {
+    int      status;        /* 0 = success, non-zero = failure */
+    Bld_Path output_file;   /* captured error output (empty if none) */
+} Bld_ActionResult;
+
+#define BLD_ACTION_OK   ((Bld_ActionResult){0, {0}})
+#define BLD_ACTION_FAIL ((Bld_ActionResult){1, {0}})
+
 typedef Bld_ActionResult (*Bld_ActionFn)(void* ctx, Bld_Path output, Bld_Path depfile);
 typedef Bld_Hash (*Bld_HashFn)(void* ctx, Bld_Hash current);
 
