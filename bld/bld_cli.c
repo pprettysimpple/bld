@@ -308,6 +308,7 @@ static void bld__init_core(Bld* b, int argc, char** argv) {
                                       .available = bld__has_in_path(cxx) || cxx_env != NULL};
     b->toolchain->compilers[2] = (Bld_Compiler){.lang = BLD_LANG_ASM, .driver = as_drv,
                                       .identity_hash = bld__make_identity_hash(as_drv), .available = true};
+    b->toolchain->sysinclude_hash = bld__sysinclude_hash(cc);
     b->global_warnings = true;
 }
 

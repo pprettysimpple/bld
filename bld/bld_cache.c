@@ -127,7 +127,14 @@ int bld__cache_has(Bld* b, Bld_Step* step) {
     if (!step->action) return 1;
     if (step->phony) return 0;
     if (!bld_fs_exists(bld__step_artifact(b, step))) return 0;
-    if (step->has_depfile && !bld_fs_exists(bld__depfile_path(b, step))) return 0;
+    /* depfile missing is OK if compilation failed (e.g. feature check for
+     * nonexistent header). The artifact ("0") is still valid. Freshness
+     * is tracked via system include path hash in the recipe instead. */
+    if (step->has_depfile) {
+        Bld_Path dep = bld__depfile_path(b, step);
+        if (bld_fs_exists(dep)) { /* depfile exists — already included in cache_key above */ }
+        /* else: no depfile, cache_key was computed without it — that's fine */
+    }
     if (!bld__cache_validate(b, step)) return 0;
     return 1;
 }

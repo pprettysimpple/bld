@@ -814,6 +814,35 @@ static Bld_Hash bld__make_identity_hash(const char* driver) {
     return h;
 }
 
+/* Hash system include search paths + their mtimes.
+ * Detects newly installed packages (mtime changes on regular Linux,
+ * path changes on NixOS/Guix). */
+static Bld_Hash bld__sysinclude_hash(const char* cc) {
+    const char* cmd = bld_str_fmt("echo | %s -xc -E -Wp,-v - 2>&1", cc);
+    FILE* f = popen(cmd, "r");
+    if (!f) return (Bld_Hash){0};
+    Bld_Hash h = {0};
+    char line[1024];
+    bool in_search = false;
+    while (fgets(line, sizeof(line), f)) {
+        size_t n = strlen(line);
+        if (n > 0 && line[n-1] == '\n') line[n-1] = '\0';
+        if (strstr(line, "search starts here")) { in_search = true; continue; }
+        if (strstr(line, "End of search list")) break;
+        if (!in_search) continue;
+        /* line is " /path/to/include" (leading space) */
+        const char* path = line;
+        while (*path == ' ') path++;
+        if (!*path) continue;
+        h = bld_hash_combine(h, bld_hash_str(path));
+        struct stat st;
+        if (stat(path, &st) == 0)
+            h = bld_hash_combine(h, (Bld_Hash){(uint64_t)st.st_mtime});
+    }
+    pclose(f);
+    return h;
+}
+
 static Bld_OsTarget bld__detect_os_from_triple(const char* triple) {
     if (strstr(triple, "darwin")) return BLD_OS_MACOS;
     if (strstr(triple, "mingw") || strstr(triple, "windows")) return BLD_OS_WINDOWS;

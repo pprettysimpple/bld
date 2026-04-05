@@ -27,6 +27,8 @@ static Bld_Hash bld__check_recipe_hash(void* ctx, Bld_Hash h) {
     Bld__CheckCtx* c = ctx;
     h = bld_hash_combine(h, bld_compiler(c->b, BLD_LANG_C)->identity_hash);
     h = bld_hash_combine(h, bld_hash_str(c->snippet));
+    /* include system include path freshness — detects newly installed packages */
+    h = bld_hash_combine(h, c->b->toolchain->sysinclude_hash);
     return h;
 }
 

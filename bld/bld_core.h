@@ -268,6 +268,8 @@ struct Bld_Toolchain {
     void (*render_link)   (Bld_Cmd* cmd, Bld_LinkCmd args);
     void (*render_archive)(Bld_Cmd* cmd, const char* tool, const char* output, Bld_Paths obj_paths);
 
+    Bld_Hash     sysinclude_hash;  /* hash of system include paths + mtimes */
+
     void* user_data;
 };
 
