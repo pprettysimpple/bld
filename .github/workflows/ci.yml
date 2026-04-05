@@ -30,13 +30,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compile bld.h with MSVC
+      - name: Build bld
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          echo #define BLD_IMPLEMENTATION > _ci_test.c
-          echo #include "bld.h" >> _ci_test.c
-          cl /std:c11 /W0 /c /I. _ci_test.c
+          cl /std:c11 /W0 /Fe:b.exe build.c
+          b.exe amalgamate
+
+      - name: Showcase curl
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd showcase\01_curl && curl -LO https://curl.se/download/curl-8.12.0.tar.gz && tar xzf curl-8.12.0.tar.gz && mkdir prj && move curl-8.12.0\lib prj\lib && move curl-8.12.0\src prj\src && move curl-8.12.0\include prj\include && move curl-8.12.0\docs prj\docs
+          cl /std:c11 /W0 /Fe:b.exe build.c
+          b.exe build -j4
+          build\bin\curl.exe --version
 
   windows-mingw:
     runs-on: windows-latest
