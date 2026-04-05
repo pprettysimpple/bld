@@ -12,8 +12,6 @@ out/
 result
 a.out
 *.json
-!flake.lock
-devrag.nix
 TODO.md
 examples/
 
