@@ -3,20 +3,9 @@
 
 #include "bld_build.c"
 
-/* ---- Timer compat ---- */
+/* ---- Timer ---- */
 
-static double bld__time_now(void) {
-#ifdef _WIN32
-    LARGE_INTEGER freq, cnt;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&cnt);
-    return (double)cnt.QuadPart / (double)freq.QuadPart;
-#else
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-#endif
-}
+static inline double bld__time_now(void) { return bld_plat_time(); }
 
 /* ---- Build stats — stored on Bld, accessed atomically ---- */
 
@@ -133,11 +122,7 @@ typedef struct {
     int* stop;  /* set to 1 on first failure (fast-fail) */
 } Bld__WorkerCtx;
 
-#ifdef _WIN32
-static DWORD WINAPI bld__worker_fn(void* arg) {
-#else
-static void* bld__worker_fn(void* arg) {
-#endif
+static void bld__worker_fn(void* arg) {
     Bld__WorkerCtx* c = arg;
     while (1) {
         bld__mutex_lock(c->mu);
@@ -154,11 +139,6 @@ static void* bld__worker_fn(void* arg) {
         if (step->state == BLD_STEP_FAILED)
             bld__atomic_store32(c->stop, 1);
     }
-#ifdef _WIN32
-    return 0;
-#else
-    return NULL;
-#endif
 }
 
 /* check_missing_deps removed -- found check is now in link_with */
@@ -273,23 +253,10 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
                 break;
         }
     } else {
-#ifdef _WIN32
-        HANDLE* th = bld_arena_alloc(sizeof(HANDLE) * (size_t)b->settings.max_jobs);
         Bld__WorkerCtx ctx = {b, order.items, order.count, &mu, &idx, &stop};
         Bld__WorkerCtx* shared = bld_arena_alloc(sizeof(Bld__WorkerCtx));
         *shared = ctx;
-        for (int t = 0; t < b->settings.max_jobs; t++)
-            th[t] = CreateThread(NULL, 0, bld__worker_fn, shared, 0, NULL);
-        WaitForMultipleObjects((DWORD)b->settings.max_jobs, th, TRUE, INFINITE);
-        for (int t = 0; t < b->settings.max_jobs; t++) CloseHandle(th[t]);
-#else
-        pthread_t* th = bld_arena_alloc(sizeof(pthread_t) * (size_t)b->settings.max_jobs);
-        Bld__WorkerCtx ctx = {b, order.items, order.count, &mu, &idx, &stop};
-        Bld__WorkerCtx* shared = bld_arena_alloc(sizeof(Bld__WorkerCtx));
-        *shared = ctx;
-        for (int t = 0; t < b->settings.max_jobs; t++) pthread_create(&th[t], NULL, bld__worker_fn, shared);
-        for (int t = 0; t < b->settings.max_jobs; t++) pthread_join(th[t], NULL);
-#endif
+        bld_plat_run_workers(bld__worker_fn, shared, b->settings.max_jobs);
     }
 }
 

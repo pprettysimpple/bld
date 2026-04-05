@@ -6,12 +6,14 @@
 #pragma once
 
 #include "bld/bld_core.h"
+#include "bld/bld_platform.h"
 #include "bld/bld_cache.h"
 #include "bld/bld_dep.h"
 #include "bld/bld_checks.h"
 
 /* implementation */
 #ifdef BLD_IMPLEMENTATION
+#include "bld/bld_platform.c"
 #include "bld/bld_core_impl.c"
 #include "bld/bld_cache.c"
 #include "bld/bld_dep.c"

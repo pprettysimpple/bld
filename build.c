@@ -114,6 +114,7 @@ void configure(Bld* b) {
     flags.warnings = TOGGLE_OFF;
 
     Bld_Paths src_files = BLD_PATHS("bld.h", "bld/bld_core.h",
+        "bld/bld_platform.h", "bld/bld_platform.c",
         "bld/bld_core_impl.c", "bld/bld_cache.h", "bld/bld_cache.c",
         "bld/bld_dep.h", "bld/bld_dep.c",
         "bld/bld_build.c", "bld/bld_checks.h", "bld/bld_checks.c",

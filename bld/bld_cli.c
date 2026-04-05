@@ -3,16 +3,6 @@
 
 #include "bld_exec.c"
 
-#ifdef __APPLE__
-  #define BLD__HOST_OS BLD_OS_MACOS
-#elif defined(__FreeBSD__)
-  #define BLD__HOST_OS BLD_OS_FREEBSD
-#elif defined(_WIN32)
-  #define BLD__HOST_OS BLD_OS_WINDOWS
-#else
-  #define BLD__HOST_OS BLD_OS_LINUX
-#endif
-
 /* ---- CLI parsing ---- */
 
 static void bld__parse_args(Bld* b) {
@@ -63,14 +53,7 @@ static void bld__parse_args(Bld* b) {
     s->passthrough = passthrough;
     s->targets = targets;
     if (s->max_jobs <= 0) {
-#ifdef _WIN32
-        SYSTEM_INFO si; GetSystemInfo(&si);
-        s->max_jobs = (int)si.dwNumberOfProcessors;
-        if (s->max_jobs <= 0) s->max_jobs = 1;
-#else
-        long n = sysconf(_SC_NPROCESSORS_ONLN);
-        s->max_jobs = n > 0 ? (int)n : 1;
-#endif
+        s->max_jobs = bld_plat_cpus();
     }
     if (s->targets.count == 0) s->show_help = true;
 }
@@ -251,15 +234,8 @@ static void bld__recompile_if_needed(Bld* b) {
     bld__proc_discard_output(&r);
     const char* hs = bld_str_fmt("%" PRIu64, h.value);
     bld_fs_write_file(hp, hs, strlen(hs));
-#ifdef _WIN32
-    /* Windows: use _spawnv to re-exec, then exit current process */
-    intptr_t rc = _spawnv(_P_WAIT, b->argv[0], (const char* const*)b->argv);
-    exit((int)rc);
-#else
-    execv(b->argv[0], b->argv);
-    bld_fs_remove(hp);
-    bld_panic("execv failed: %s\n", strerror(errno));
-#endif
+    bld_plat_reexec(b->argv);
+    bld_fs_remove(hp);  /* only reached on POSIX if execv fails */
 }
 
 /* ---- Init stages ---- */
