@@ -138,42 +138,58 @@ static void bld__check_missing_deps(Bld* b) {
 
 static Bld_StepList bld__topo_sort(Bld* b, Bld_StepList* roots) {
     Bld_StepList order = {0};
-    enum { WHITE = 0, GRAY, BLACK };
-    size_t ns = b->all_steps.count;
-    int* col = bld_arena_alloc(ns * sizeof(int));
-    memset(col, 0, ns * sizeof(int));
+    enum { UNVISITED = 0, IN_PROGRESS, DONE };
 
-    typedef struct { Bld_Step* s; size_t di, ii; } Fr;
-    BLD_DA(Fr) stk = {0};
+    size_t num_steps = b->all_steps.count;
+    int* visited = bld_arena_alloc(num_steps * sizeof(int));
+    memset(visited, 0, num_steps * sizeof(int));
 
-    for (size_t ti = 0; ti < roots->count; ti++) {
-        size_t ri = bld__step_idx(b, roots->items[ti]);
-        if (col[ri] == BLACK) continue;
-        bld_da_push(&stk, ((Fr){roots->items[ti], 0, 0}));
-        col[ri] = GRAY;
-        while (stk.count > 0) {
-            Fr* f = &stk.items[stk.count - 1];
-            bool pushed = false;
-            while (f->di < f->s->deps.count) {
-                Bld_Step* d = f->s->deps.items[f->di++];
-                size_t di = bld__step_idx(b, d);
-                if (col[di] == BLACK) continue;
-                if (col[di] == GRAY) bld_panic("cycle: %s -> %s\n", f->s->name, d->name);
-                col[di] = GRAY; bld_da_push(&stk, ((Fr){d, 0, 0})); pushed = true; break;
+    typedef struct { Bld_Step* step; size_t dep_i, input_i; } DfsFrame;
+    BLD_DA(DfsFrame) stack = {0};
+
+    for (size_t ri = 0; ri < roots->count; ri++) {
+        size_t root_idx = bld__step_idx(b, roots->items[ri]);
+        if (visited[root_idx] == DONE) continue;
+        visited[root_idx] = IN_PROGRESS;
+        bld_da_push(&stack, ((DfsFrame){roots->items[ri], 0, 0}));
+
+        while (stack.count > 0) {
+            DfsFrame* top = &stack.items[stack.count - 1];
+            bool descended = false;
+
+            /* walk ordering deps */
+            while (top->dep_i < top->step->deps.count) {
+                Bld_Step* dep = top->step->deps.items[top->dep_i++];
+                size_t idx = bld__step_idx(b, dep);
+                if (visited[idx] == DONE) continue;
+                if (visited[idx] == IN_PROGRESS)
+                    bld_panic("cycle: %s -> %s\n", top->step->name, dep->name);
+                visited[idx] = IN_PROGRESS;
+                bld_da_push(&stack, ((DfsFrame){dep, 0, 0}));
+                descended = true;
+                break;
             }
-            if (pushed) continue;
-            while (f->ii < f->s->inputs.count) {
-                Bld_Step* d = f->s->inputs.items[f->ii++];
-                if (!d) continue;
-                size_t di = bld__step_idx(b, d);
-                if (col[di] == BLACK) continue;
-                if (col[di] == GRAY) bld_panic("cycle: %s -> %s\n", f->s->name, d->name);
-                col[di] = GRAY; bld_da_push(&stk, ((Fr){d, 0, 0})); pushed = true; break;
+            if (descended) continue;
+
+            /* walk data inputs */
+            while (top->input_i < top->step->inputs.count) {
+                Bld_Step* dep = top->step->inputs.items[top->input_i++];
+                if (!dep) continue;
+                size_t idx = bld__step_idx(b, dep);
+                if (visited[idx] == DONE) continue;
+                if (visited[idx] == IN_PROGRESS)
+                    bld_panic("cycle: %s -> %s\n", top->step->name, dep->name);
+                visited[idx] = IN_PROGRESS;
+                bld_da_push(&stack, ((DfsFrame){dep, 0, 0}));
+                descended = true;
+                break;
             }
-            if (pushed) continue;
-            col[bld__step_idx(b, f->s)] = BLACK;
-            bld_da_push(&order, f->s);
-            stk.count--;
+            if (descended) continue;
+
+            /* all children visited — emit this step */
+            visited[bld__step_idx(b, top->step)] = DONE;
+            bld_da_push(&order, top->step);
+            stack.count--;
         }
     }
     return order;
