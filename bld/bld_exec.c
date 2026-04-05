@@ -88,7 +88,8 @@ static void bld__perform_step(Bld* b, Bld_Step* step) {
 
     if (result != BLD_ACTION_OK) {
         if (!b->settings.silent && step->name[0])
-            fprintf(stderr, "\x1b[1;31mbld: step failed:\x1b[0m %s\n", step->name);
+            fprintf(stderr, "%sFAILED:%s %s\n",
+                    bld__c(BLD_C_RED), bld__c(BLD_C_RESET), step->name);
         __atomic_fetch_add(&b->steps_failed, 1, __ATOMIC_RELAXED);
         bld__step_set_state(step, BLD_STEP_FAILED);
         return;
@@ -225,7 +226,11 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
         }
     }
 
-    if (b->progress_total == 0) return;
+    if (b->progress_total == 0) {
+        if (!b->settings.silent)
+            bld_log_done(0, b->steps_cached, 0, 0, 0, bld_arena_get()->offset);
+        return;
+    }
 
     /* execute */
     pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
