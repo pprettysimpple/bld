@@ -38,7 +38,6 @@ static void amalg_file(Bld_Strs* out, Bld_Path root, const char* relpath) {
     for (size_t i = 0; i < lines.count; i++) {
         if (strcmp(lines.items[i], "#pragma once") == 0) continue;
         if (strncmp(lines.items[i], "#include \"bld_", 14) == 0) continue;
-        if (strncmp(lines.items[i], "#include \"xxhash.h\"", 19) == 0) continue;
         bld_strs_push(out, lines.items[i]);
     }
 }
