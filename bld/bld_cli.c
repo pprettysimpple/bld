@@ -181,32 +181,34 @@ static int bld__handle_test(Bld* b) {
 
         /* build command */
         Bld_Cmd cmd = {0};
-        if (te->working_dir && te->working_dir[0])
-            bld_cmd_appendf(&cmd, "cd \"%s\" && ", te->working_dir);
         bld_cmd_appendf(&cmd, "\"%s\"", exe_path.s);
         for (size_t ai = 0; ai < te->args.count; ai++) bld_cmd_appendf(&cmd, " \"%s\"", te->args.items[ai]);
-        bld_cmd_appendf(&cmd, " > \"%s\" 2>&1", log_path.s);
+
+        const char* workdir = (te->working_dir && te->working_dir[0]) ? te->working_dir : NULL;
 
         struct timespec st0;
         clock_gettime(CLOCK_MONOTONIC, &st0);
 
-        int rc = system(cmd.items);
+        Bld_ProcResult r = bld__subprocess_run(cmd.items, workdir, BLD_PROC_DEFAULT);
 
         struct timespec st1;
         clock_gettime(CLOCK_MONOTONIC, &st1);
         double elapsed = (double)(st1.tv_sec - st0.tv_sec) + (double)(st1.tv_nsec - st0.tv_nsec) / 1e9;
 
-        if (rc == 0) {
+        /* save captured output as log file */
+        if (r.output_file.s[0]) {
+            bld_fs_rename(r.output_file, log_path);
+            r.output_file = bld_path("");  /* already moved, don't cleanup */
+        } else {
+            bld_fs_write_file(log_path, "", 0);
+        }
+
+        if (r.exit_code == 0) {
             passed++;
         } else {
             failed++;
             bld_log("%sFAIL:%s %s (%.2fs)\n", bld__c(BLD_C_RED), bld__c(BLD_C_RESET), te->name, elapsed);
-            /* show tail of output */
-            const char* tail_cmd = bld_str_fmt("tail -50 \"%s\"", log_path.s);
-            bld_log("%s", bld__c(BLD_C_DIM));
-            if (system(tail_cmd)) { /* ignore tail errors */ }
-            bld_log("%s", bld__c(BLD_C_RESET));
-            bld_log("  full output: %s\n", log_path.s);
+            bld_log("  output: %s\n", log_path.s);
         }
     }
 
@@ -241,8 +243,13 @@ static void bld__recompile_if_needed(Bld* b) {
     }
 
     bld_log_info("[*] Recompiling build tool...\n");
-    int rc = system(bld_str_fmt("%s -o \"%s\"", bld_recompile_cmd, b->argv[0]));
-    if (rc != 0) bld_panic("failed to recompile build tool\n");
+    const char* recompile_cmd_str = bld_str_fmt("%s -o \"%s\"", bld_recompile_cmd, b->argv[0]);
+    Bld_ProcResult r = bld__subprocess_run(recompile_cmd_str, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) {
+        bld__proc_print_output(&r);
+        bld_panic("failed to recompile build tool\n");
+    }
+    bld__proc_discard_output(&r);
     const char* hs = bld_str_fmt("%" PRIu64, h.value);
     bld_fs_write_file(hp, hs, strlen(hs));
     execv(b->argv[0], b->argv);

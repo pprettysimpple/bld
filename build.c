@@ -102,8 +102,8 @@ static Bld_ActionResult run_selftests(void* ctx, Bld_Path output, Bld_Path depfi
     (void)output; (void)depfile;
     Bld* b = ctx;
     const char* cmd = bld_str_fmt("bash \"%s/tests/run_all.sh\" \"%s\"", b->root.s, b->root.s);
-    int rc = system(cmd);
-    return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
+    Bld_ProcResult r = bld__subprocess_run(cmd, NULL, BLD_PROC_PASSTHRU);
+    return r.exit_code == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
 }
 
 /* ---- Configure ---- */

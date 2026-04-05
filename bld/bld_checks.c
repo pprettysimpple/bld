@@ -59,10 +59,9 @@ static Bld_ActionResult bld__check_action(void* ctx, Bld_Path output, Bld_Path d
     if (c->b->toolchain)
         c->b->toolchain->render_compile(&cmd, cc_cmd);
     else
-        bld_cmd_appendf(&cmd, "%s -xc %s -c -o %s 2>/dev/null", cc, src.s, tmp_obj.s);
-    /* suppress errors */
-    bld_cmd_appendf(&cmd, " 2>/dev/null");
-    int rc = system(cmd.items);
+        bld_cmd_appendf(&cmd, "%s -xc %s -c -o %s", cc, src.s, tmp_obj.s);
+    Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_SILENT);
+    int rc = r.exit_code;
 
     if (!c->is_sizeof) {
         bld_fs_write_file(output, rc == 0 ? "1" : "0", 1);

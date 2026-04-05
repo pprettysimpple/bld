@@ -383,7 +383,10 @@ static Bld_ActionResult bld__obj_action(void* ctx, Bld_Path output, Bld_Path dep
     Bld_Cmd cmd = {0};
     tc->render_compile(&cmd, cc);
     if (c->b->settings.verbose) bld_log_action("compile: %s\n", cmd.items);
-    int rc = system(cmd.items);
+    Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) bld__proc_print_output(&r);
+    else bld__proc_discard_output(&r);
+    int rc = r.exit_code;
     return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
 }
 
@@ -665,7 +668,10 @@ static Bld_ActionResult bld__link_exe_action(void* ctx, Bld_Path output, Bld_Pat
     Bld_Cmd cmd = {0};
     tc->render_link(&cmd, lc);
     if (c->b->settings.verbose) bld_log_action("link exe: %s\n", cmd.items);
-    int rc = system(cmd.items);
+    Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) bld__proc_print_output(&r);
+    else bld__proc_discard_output(&r);
+    int rc = r.exit_code;
     return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
 }
 
@@ -779,7 +785,10 @@ static Bld_ActionResult bld__link_lib_action(void* ctx, Bld_Path output, Bld_Pat
         tc->render_link(&cmd, lc);
     }
     if (c->b->settings.verbose) bld_log_action("link lib: %s\n", cmd.items);
-    int rc = system(cmd.items);
+    Bld_ProcResult r = bld__subprocess_run(cmd.items, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) bld__proc_print_output(&r);
+    else bld__proc_discard_output(&r);
+    int rc = r.exit_code;
     return rc == 0 ? BLD_ACTION_OK : BLD_ACTION_FAILED;
 }
 
@@ -911,7 +920,10 @@ typedef struct { const char* cmd; } Bld__CmdCtx;
 static Bld_ActionResult bld__cmd_action(void* ctx, Bld_Path output, Bld_Path depfile) {
     (void)output; (void)depfile;
     Bld__CmdCtx* c = ctx;
-    int rc = system(c->cmd);
+    Bld_ProcResult r = bld__subprocess_run(c->cmd, NULL, BLD_PROC_DEFAULT);
+    if (r.exit_code != 0) bld__proc_print_output(&r);
+    else bld__proc_discard_output(&r);
+    int rc = r.exit_code;
     if (rc != 0) return BLD_ACTION_FAILED;
     return BLD_ACTION_OK;
 }
@@ -949,12 +961,12 @@ static Bld_ActionResult bld__run_action(void* ctx, Bld_Path output, Bld_Path dep
     (void)output; (void)depfile;
     Bld__RunCtx* c = ctx;
     Bld_Cmd cmd = {0};
-    if (c->opts.working_dir && c->opts.working_dir[0])
-        bld_cmd_appendf(&cmd, "cd \"%s\" && ", c->opts.working_dir);
     bld_cmd_appendf(&cmd, "\"%s\"", bld__target_artifact(c->b, c->exe_tgt).s);
     for (size_t i = 0; i < c->opts.args.count; i++) bld_cmd_appendf(&cmd, " \"%s\"", c->opts.args.items[i]);
     for (size_t i = 0; i < c->b->settings.passthrough.count; i++) bld_cmd_appendf(&cmd, " \"%s\"", c->b->settings.passthrough.items[i]);
-    int rc = system(cmd.items);
+    const char* workdir = (c->opts.working_dir && c->opts.working_dir[0]) ? c->opts.working_dir : NULL;
+    Bld_ProcResult r = bld__subprocess_run(cmd.items, workdir, BLD_PROC_PASSTHRU);
+    int rc = r.exit_code;
     if (rc != 0) return BLD_ACTION_FAILED;
     return BLD_ACTION_OK;
 }

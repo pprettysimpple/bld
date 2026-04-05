@@ -57,8 +57,9 @@ Bld_Target* bld_find_pkg(Bld* b, const char* name) {
     Bld_Target* t = bld__add_pkg(b, &opts);
     Bld_Pkg* pkg = (Bld_Pkg*)t;
 
-    const char* check = bld_str_fmt("pkg-config --exists %s 2>/dev/null", name);
-    if (system(check) != 0) {
+    const char* check = bld_str_fmt("pkg-config --exists %s", name);
+    Bld_ProcResult pkg_r = bld__subprocess_run(check, NULL, BLD_PROC_SILENT);
+    if (pkg_r.exit_code != 0) {
         t->found = false;
         return t;
     }

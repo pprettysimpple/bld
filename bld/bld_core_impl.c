@@ -775,6 +775,78 @@ Bld_Paths bld_files_merge(Bld_Paths a, Bld_Paths b) {
 }
 
 /* ================================================================
+ *  Subprocess execution (replaces system())
+ * ================================================================ */
+
+typedef enum {
+    BLD_PROC_DEFAULT  = 0,
+    BLD_PROC_SILENT   = 1 << 0,
+    BLD_PROC_PASSTHRU = 1 << 1,
+} Bld_ProcFlags;
+
+typedef struct {
+    int      exit_code;
+    Bld_Path output_file;  /* tmp file with captured stdout+stderr, empty if not captured */
+} Bld_ProcResult;
+
+static Bld_ProcResult bld__subprocess_run(const char* cmd, const char* workdir, Bld_ProcFlags flags) {
+    Bld_ProcResult res = {.exit_code = -1, .output_file = bld_path("")};
+
+    int outfd = -1;
+    if (!(flags & (BLD_PROC_SILENT | BLD_PROC_PASSTHRU))) {
+        char tpl[] = "/tmp/bld_XXXXXX";
+        outfd = mkstemp(tpl);
+        if (outfd < 0) return res;
+        res.output_file = bld_path(bld_str_dup(tpl));
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        if (outfd >= 0) { close(outfd); unlink(res.output_file.s); }
+        return res;
+    }
+
+    if (pid == 0) {
+        if (workdir && workdir[0]) chdir(workdir);
+        if (flags & BLD_PROC_SILENT) {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) { dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); close(devnull); }
+        } else if (outfd >= 0) {
+            dup2(outfd, STDOUT_FILENO); dup2(outfd, STDERR_FILENO); close(outfd);
+        }
+        execvp("sh", (char*[]){"sh", "-c", (char*)cmd, NULL});
+        _exit(127);
+    }
+
+    if (outfd >= 0) close(outfd);
+    int status;
+    waitpid(pid, &status, 0);
+    res.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+    return res;
+}
+
+/* stream captured output to stderr, then unlink tmp file */
+static void bld__proc_print_output(Bld_ProcResult* r) {
+    if (!r->output_file.s[0]) return;
+    int fd = open(r->output_file.s, O_RDONLY);
+    if (fd >= 0) {
+        char buf[4096]; ssize_t n;
+        while ((n = read(fd, buf, sizeof(buf))) > 0)
+            (void)write(STDERR_FILENO, buf, (size_t)n);
+        close(fd);
+    }
+    unlink(r->output_file.s);
+    r->output_file = bld_path("");
+}
+
+/* discard captured output */
+static void bld__proc_discard_output(Bld_ProcResult* r) {
+    if (!r->output_file.s[0]) return;
+    unlink(r->output_file.s);
+    r->output_file = bld_path("");
+}
+
+/* ================================================================
  *  Tool detection
  * ================================================================ */
 
