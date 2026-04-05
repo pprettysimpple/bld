@@ -4,17 +4,17 @@
 #include "bld_dep.h"
 
 static Bld_Paths bld__dep_clone_paths(Bld_Paths s) {
-    if (s.len == 0) return (Bld_Paths){0};
-    const char** copy = bld_arena_alloc(s.len * sizeof(const char*));
-    for (size_t i = 0; i < s.len; i++) copy[i] = bld_str_dup(s.items[i]);
-    return (Bld_Paths){copy, s.len, 0};
+    if (s.count == 0) return (Bld_Paths){0};
+    const char** copy = bld_arena_alloc(s.count * sizeof(const char*));
+    for (size_t i = 0; i < s.count; i++) copy[i] = bld_str_dup(s.items[i]);
+    return (Bld_Paths){copy, s.count, 0};
 }
 
 static Bld_Strs bld__dep_clone_strs(Bld_Strs s) {
-    if (s.len == 0) return (Bld_Strs){0};
-    const char** copy = bld_arena_alloc(s.len * sizeof(const char*));
-    for (size_t i = 0; i < s.len; i++) copy[i] = bld_str_dup(s.items[i]);
-    return (Bld_Strs){copy, s.len, 0};
+    if (s.count == 0) return (Bld_Strs){0};
+    const char** copy = bld_arena_alloc(s.count * sizeof(const char*));
+    for (size_t i = 0; i < s.count; i++) copy[i] = bld_str_dup(s.items[i]);
+    return (Bld_Strs){copy, s.count, 0};
 }
 
 Bld_Dep* bld__dep(const Bld_Dep* d) {

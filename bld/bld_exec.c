@@ -233,7 +233,7 @@ static void bld__build_steps(Bld* b, Bld_StepList order) {
 static void bld__run_build(Bld* b) {
     /* resolve requested targets */
     Bld_StepList to_build = {0};
-    for (size_t ri = 0; ri < b->settings.targets.len; ri++) {
+    for (size_t ri = 0; ri < b->settings.targets.count; ri++) {
         const char* rq = b->settings.targets.items[ri];
         bool found = false;
         for (size_t i = 0; i < b->all_targets.count; i++) {

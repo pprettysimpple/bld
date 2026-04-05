@@ -151,7 +151,7 @@ Bld_Strs  all_defs  = bld_strs_merge(a, b);
 Bld_Paths all_paths = bld_paths_merge(a, b);
 ```
 
-All slices are arena-backed with `{ .items, .len, .cap }`.
+All slices are arena-backed with `{ .items, .count, .cap }`.
 
 ## Compile Flags
 

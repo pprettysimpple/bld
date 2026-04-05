@@ -35,7 +35,7 @@ static void amalg_file(Bld_Strs* out, Bld_Path root, const char* relpath) {
     const char* content = bld_fs_read_file(bld_path_join(root, bld_path(relpath)), &len);
     bld_strs_push(out, bld_str_fmt("/* --- %s --- */", relpath));
     Bld_Strs lines = bld_str_lines(content);
-    for (size_t i = 0; i < lines.len; i++) {
+    for (size_t i = 0; i < lines.count; i++) {
         if (strcmp(lines.items[i], "#pragma once") == 0) continue;
         if (strncmp(lines.items[i], "#include \"bld_", 14) == 0) continue;
         if (strncmp(lines.items[i], "#include \"xxhash.h\"", 19) == 0) {
@@ -60,7 +60,7 @@ static Bld_ActionResult gen_amalgamated(void* ctx, Bld_Path output, Bld_Path dep
         const char* doc = bld_fs_read_file(api_md, &doc_len);
         bld_strs_push(&out, "/*");
         Bld_Strs doc_lines = bld_str_lines(doc);
-        for (size_t i = 0; i < doc_lines.len; i++) {
+        for (size_t i = 0; i < doc_lines.count; i++) {
             /* escape star-slash inside doc to avoid breaking the block comment */
             const char* line = doc_lines.items[i];
             if (strstr(line, "*/")) {
@@ -84,7 +84,7 @@ static Bld_ActionResult gen_amalgamated(void* ctx, Bld_Path output, Bld_Path dep
     }
 
     Bld_Strs lines = bld_str_lines(content);
-    for (size_t i = 0; i < lines.len; i++) {
+    for (size_t i = 0; i < lines.count; i++) {
         if (strncmp(lines.items[i], "#include \"bld/", 14) == 0) {
             const char* q1 = strchr(lines.items[i], '"') + 1;
             const char* q2 = strchr(q1, '"');

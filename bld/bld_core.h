@@ -85,8 +85,8 @@ typedef BLD_DA(Bld_Path)       Bld_PathList;
 
 /* ===== Typed slices for user-facing API ===== */
 
-typedef struct { const char** items; size_t len, cap; } Bld_Strs;   /* defines, lib names */
-typedef struct { const char** items; size_t len, cap; } Bld_Paths;  /* source files, dir paths */
+typedef struct { const char** items; size_t count, cap; } Bld_Strs;   /* defines, lib names */
+typedef struct { const char** items; size_t count, cap; } Bld_Paths;  /* source files, dir paths */
 
 Bld_Strs    bld_str_lines(const char* s);
 const char* bld_str_join(const Bld_Strs* parts, const char* sep);

@@ -130,18 +130,18 @@ Bld_Strs bld_str_lines(const char* s) {
 }
 
 const char* bld_str_join(const Bld_Strs* parts, const char* sep) {
-    if (!parts->len) return "";
+    if (!parts->count) return "";
     size_t sep_len = strlen(sep);
     /* compute lengths in one pass */
-    size_t* lens = bld_arena_alloc(parts->len * sizeof(size_t));
+    size_t* lens = bld_arena_alloc(parts->count * sizeof(size_t));
     size_t total = 0;
-    for (size_t i = 0; i < parts->len; i++) {
+    for (size_t i = 0; i < parts->count; i++) {
         lens[i] = strlen(parts->items[i]);
         total += lens[i] + (i > 0 ? sep_len : 0);
     }
     char* buf = bld_arena_alloc(total + 1);
     size_t off = 0;
-    for (size_t i = 0; i < parts->len; i++) {
+    for (size_t i = 0; i < parts->count; i++) {
         if (i > 0) { memcpy(buf + off, sep, sep_len); off += sep_len; }
         memcpy(buf + off, parts->items[i], lens[i]);
         off += lens[i];
@@ -614,53 +614,53 @@ Bld_Paths bld__paths_lit(const char** items, size_t len) {
 /* ---- Bld_Strs / Bld_Paths push & merge ---- */
 
 void bld_strs_push(Bld_Strs* s, const char* item) {
-    if (s->len >= s->cap) {
+    if (s->count >= s->cap) {
         size_t new_cap = s->cap ? s->cap * 2 : 8;
-        if (s->cap == 0 && s->items && s->len > 0) {
+        if (s->cap == 0 && s->items && s->count > 0) {
             /* first dynamic use of a static slice — copy from compound literal */
             const char** old = s->items;
             s->items = bld_arena_alloc(new_cap * sizeof(const char*));
-            memcpy(s->items, old, s->len * sizeof(const char*));
+            memcpy(s->items, old, s->count * sizeof(const char*));
         } else {
             s->items = bld_arena_realloc(
                 s->items, s->cap * sizeof(const char*), new_cap * sizeof(const char*));
         }
         s->cap = new_cap;
     }
-    s->items[s->len++] = item;
+    s->items[s->count++] = item;
 }
 
 void bld_paths_push(Bld_Paths* s, const char* item) {
-    if (s->len >= s->cap) {
+    if (s->count >= s->cap) {
         size_t new_cap = s->cap ? s->cap * 2 : 8;
-        if (s->cap == 0 && s->items && s->len > 0) {
+        if (s->cap == 0 && s->items && s->count > 0) {
             const char** old = s->items;
             s->items = bld_arena_alloc(new_cap * sizeof(const char*));
-            memcpy(s->items, old, s->len * sizeof(const char*));
+            memcpy(s->items, old, s->count * sizeof(const char*));
         } else {
             s->items = bld_arena_realloc(
                 s->items, s->cap * sizeof(const char*), new_cap * sizeof(const char*));
         }
         s->cap = new_cap;
     }
-    s->items[s->len++] = item;
+    s->items[s->count++] = item;
 }
 
 Bld_Strs bld_strs_merge(Bld_Strs a, Bld_Strs b) {
-    size_t total = a.len + b.len;
+    size_t total = a.count + b.count;
     if (total == 0) return (Bld_Strs){0};
     const char** r = bld_arena_alloc(total * sizeof(const char*));
-    for (size_t i = 0; i < a.len; i++) r[i] = a.items[i];
-    for (size_t i = 0; i < b.len; i++) r[a.len + i] = b.items[i];
+    for (size_t i = 0; i < a.count; i++) r[i] = a.items[i];
+    for (size_t i = 0; i < b.count; i++) r[a.count + i] = b.items[i];
     return (Bld_Strs){r, total, total};
 }
 
 Bld_Paths bld_paths_merge(Bld_Paths a, Bld_Paths b) {
-    size_t total = a.len + b.len;
+    size_t total = a.count + b.count;
     if (total == 0) return (Bld_Paths){0};
     const char** r = bld_arena_alloc(total * sizeof(const char*));
-    for (size_t i = 0; i < a.len; i++) r[i] = a.items[i];
-    for (size_t i = 0; i < b.len; i++) r[a.len + i] = b.items[i];
+    for (size_t i = 0; i < a.count; i++) r[i] = a.items[i];
+    for (size_t i = 0; i < b.count; i++) r[a.count + i] = b.items[i];
     return (Bld_Paths){r, total, total};
 }
 
@@ -726,18 +726,18 @@ Bld_Paths bld_files_glob(const char* pattern) {
     }
 
     /* sort for deterministic order across runs */
-    if (result.len > 1)
-        qsort(result.items, result.len, sizeof(const char*), bld__strcmp_indirect);
+    if (result.count > 1)
+        qsort(result.items, result.count, sizeof(const char*), bld__strcmp_indirect);
 
     return result;
 }
 
 Bld_Paths bld_files_exclude(Bld_Paths files, Bld_Paths exclude) {
-    if (!files.items || files.len == 0) return files;
+    if (!files.items || files.count == 0) return files;
     Bld_Paths result = {0};
-    for (size_t i = 0; i < files.len; i++) {
+    for (size_t i = 0; i < files.count; i++) {
         bool skip = false;
-        for (size_t j = 0; j < exclude.len; j++) {
+        for (size_t j = 0; j < exclude.count; j++) {
             const char* pat = exclude.items[j];
             bool is_glob = (strpbrk(pat, "*?[") != NULL);
             if (is_glob) {
@@ -887,17 +887,17 @@ static void bld__gcc_render_compile(Bld_Cmd* cmd, Bld_CompileCmd c) {
     if (c.extra_flags && c.extra_flags[0]) bld_cmd_appendf(cmd, " %s", c.extra_flags);
 
     /* defines */
-    for (size_t i = 0; i < c.defines.len; i++) {
+    for (size_t i = 0; i < c.defines.count; i++) {
         bld_cmd_appendf(cmd, " -D");
         bld_cmd_append_sq(cmd, c.defines.items[i]);
     }
 
     /* include dirs from CompileFlags */
-    for (size_t i = 0; i < c.include_dirs.len; i++)
+    for (size_t i = 0; i < c.include_dirs.count; i++)
         bld_cmd_appendf(cmd, " -I%s", c.include_dirs.items[i]);
 
     /* system include dirs from CompileFlags */
-    for (size_t i = 0; i < c.sys_include_dirs.len; i++)
+    for (size_t i = 0; i < c.sys_include_dirs.count; i++)
         bld_cmd_appendf(cmd, " -isystem %s", c.sys_include_dirs.items[i]);
 
     /* debug/sanitizer/lto */
@@ -948,25 +948,25 @@ static void bld__gcc_render_link(Bld_Cmd* cmd, Bld_LinkCmd c) {
             bld_cmd_appendf(cmd, " -Wl,-soname,%s", c.soname);
 
         /* obj paths */
-        for (size_t i = 0; i < c.obj_paths.len; i++)
+        for (size_t i = 0; i < c.obj_paths.count; i++)
             bld_cmd_appendf(cmd, " \"%s\"", c.obj_paths.items[i]);
 
         bld_cmd_appendf(cmd, " -o %s", c.output);
     } else {
         /* obj paths */
-        for (size_t i = 0; i < c.obj_paths.len; i++)
+        for (size_t i = 0; i < c.obj_paths.count; i++)
             bld_cmd_appendf(cmd, " \"%s\"", c.obj_paths.items[i]);
 
         /* lib dirs */
-        for (size_t i = 0; i < c.lib_dirs.len; i++)
+        for (size_t i = 0; i < c.lib_dirs.count; i++)
             bld_cmd_appendf(cmd, " -L\"%s\"", c.lib_dirs.items[i]);
 
         /* lib names */
-        for (size_t i = 0; i < c.lib_names.len; i++)
+        for (size_t i = 0; i < c.lib_names.count; i++)
             bld_cmd_appendf(cmd, " -l%s", c.lib_names.items[i]);
 
         /* rpaths */
-        for (size_t i = 0; i < c.rpaths.len; i++)
+        for (size_t i = 0; i < c.rpaths.count; i++)
             bld_cmd_appendf(cmd, " -Wl,-rpath,%s", c.rpaths.items[i]);
 
         bld_cmd_appendf(cmd, " -o %s", c.output);
@@ -982,7 +982,7 @@ static void bld__gcc_render_link(Bld_Cmd* cmd, Bld_LinkCmd c) {
  */
 static void bld__gcc_render_archive(Bld_Cmd* cmd, const char* tool, const char* output, Bld_Paths obj_paths) {
     bld_cmd_appendf(cmd, "%s rcs %s", tool, output);
-    for (size_t i = 0; i < obj_paths.len; i++)
+    for (size_t i = 0; i < obj_paths.count; i++)
         bld_cmd_appendf(cmd, " \"%s\"", obj_paths.items[i]);
 }
 

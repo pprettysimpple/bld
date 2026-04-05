@@ -63,7 +63,7 @@ static void bld__parse_args(Bld* b) {
     s->passthrough = passthrough;
     s->targets = targets;
     if (s->max_jobs <= 0) { long n = sysconf(_SC_NPROCESSORS_ONLN); s->max_jobs = n > 0 ? (int)n : 1; }
-    if (s->targets.len == 0) s->show_help = true;
+    if (s->targets.count == 0) s->show_help = true;
 }
 
 /* ---- Help ---- */
@@ -123,7 +123,7 @@ static void bld__show_help(Bld* b) {
 }
 
 static int bld__handle_clean(Bld* b) {
-    for (size_t i = 0; i < b->settings.targets.len; i++) {
+    for (size_t i = 0; i < b->settings.targets.count; i++) {
         if (strcmp(b->settings.targets.items[i], "clean") == 0) {
             bld_log_info("[*] Cleaning %s and %s...\n", b->cache.s, b->out.s);
             bld_fs_remove_all(b->cache);
@@ -140,7 +140,7 @@ static int bld__handle_clean(Bld* b) {
 static int bld__handle_test(Bld* b) {
     /* check if "test" is among requested targets */
     bool want_test = false;
-    for (size_t i = 0; i < b->settings.targets.len; i++)
+    for (size_t i = 0; i < b->settings.targets.count; i++)
         if (strcmp(b->settings.targets.items[i], "test") == 0) { want_test = true; break; }
     if (!want_test) return 0;
     if (b->tests.count == 0) { bld_log("no tests registered\n"); return 1; }
@@ -181,7 +181,7 @@ static int bld__handle_test(Bld* b) {
         if (te->working_dir && te->working_dir[0])
             bld_cmd_appendf(&cmd, "cd \"%s\" && ", te->working_dir);
         bld_cmd_appendf(&cmd, "\"%s\"", exe_path.s);
-        for (size_t ai = 0; ai < te->args.len; ai++) bld_cmd_appendf(&cmd, " \"%s\"", te->args.items[ai]);
+        for (size_t ai = 0; ai < te->args.count; ai++) bld_cmd_appendf(&cmd, " \"%s\"", te->args.items[ai]);
         bld_cmd_appendf(&cmd, " > \"%s\" 2>&1", log_path.s);
 
         struct timespec st0;

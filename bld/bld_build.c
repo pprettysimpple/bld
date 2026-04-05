@@ -13,17 +13,17 @@
  * ================================================================ */
 
 static Bld_Strs bld__clone_strs(Bld_Strs s) {
-    if (s.len == 0) return (Bld_Strs){0};
-    const char** copy = bld_arena_alloc(s.len * sizeof(const char*));
-    for (size_t i = 0; i < s.len; i++) copy[i] = bld_str_dup(s.items[i]);
-    return (Bld_Strs){copy, s.len, 0};
+    if (s.count == 0) return (Bld_Strs){0};
+    const char** copy = bld_arena_alloc(s.count * sizeof(const char*));
+    for (size_t i = 0; i < s.count; i++) copy[i] = bld_str_dup(s.items[i]);
+    return (Bld_Strs){copy, s.count, 0};
 }
 
 static Bld_Paths bld__clone_paths(Bld_Paths s) {
-    if (s.len == 0) return (Bld_Paths){0};
-    const char** copy = bld_arena_alloc(s.len * sizeof(const char*));
-    for (size_t i = 0; i < s.len; i++) copy[i] = bld_str_dup(s.items[i]);
-    return (Bld_Paths){copy, s.len, 0};
+    if (s.count == 0) return (Bld_Paths){0};
+    const char** copy = bld_arena_alloc(s.count * sizeof(const char*));
+    for (size_t i = 0; i < s.count; i++) copy[i] = bld_str_dup(s.items[i]);
+    return (Bld_Paths){copy, s.count, 0};
 }
 
 Bld_CompileFlags bld_clone_compile_flags(Bld_CompileFlags f) {
@@ -224,13 +224,13 @@ static void bld__resolve_link_deps(Bld* b) {
             /* propagate compile_propagate from lib deps as synthetic ext_dep */
             if (dep->kind == BLD_TGT_LIB) {
                 Bld_CompileFlags* pub = &((Bld_Lib*)dep)->opts.compile_propagate;
-                if (pub->include_dirs.len || pub->system_include_dirs.len ||
-                    pub->defines.len || pub->extra_flags) {
+                if (pub->include_dirs.count || pub->system_include_dirs.count ||
+                    pub->defines.count || pub->extra_flags) {
                     /* build extra_cflags from defines */
                     const char* dcflags = NULL;
-                    if (pub->defines.len) {
+                    if (pub->defines.count) {
                         Bld_Cmd dc = {0};
-                        for (size_t di = 0; di < pub->defines.len; di++)
+                        for (size_t di = 0; di < pub->defines.count; di++)
                             bld_cmd_appendf(&dc, " -D%s", pub->defines.items[di]);
                         if (pub->extra_flags)
                             bld_cmd_appendf(&dc, " %s", pub->extra_flags);
@@ -251,7 +251,7 @@ static void bld__resolve_link_deps(Bld* b) {
 
                 /* propagate link_propagate from lib deps as synthetic ext_dep (link-side) */
                 Bld_LinkFlags* lpub = &((Bld_Lib*)dep)->opts.link_propagate;
-                if (lpub->libs.len || lpub->lib_dirs.len || lpub->extra_flags) {
+                if (lpub->libs.count || lpub->lib_dirs.count || lpub->extra_flags) {
                     Bld_Dep* lsyn = bld_arena_alloc(sizeof(Bld_Dep));
                     *lsyn = (Bld_Dep){
                         .name = bld_str_fmt("%s:link_propagate", dep->name),
@@ -313,9 +313,9 @@ static Bld_Hash bld__hash_compile_flags(Bld_Hash h, const Bld_CompileFlags* f) {
     h = bld_hash_combine(h, (Bld_Hash){f->warnings});
     h = bld_hash_combine(h, (Bld_Hash){f->debug_info});
     if (f->extra_flags) h = bld_hash_combine(h, bld_hash_str(f->extra_flags));
-    for (size_t i = 0; i < f->defines.len; i++) h = bld_hash_combine(h, bld_hash_str(f->defines.items[i]));
-    for (size_t i = 0; i < f->include_dirs.len; i++) h = bld_hash_combine(h, bld_hash_str(f->include_dirs.items[i]));
-    for (size_t i = 0; i < f->system_include_dirs.len; i++) h = bld_hash_combine(h, bld_hash_str(f->system_include_dirs.items[i]));
+    for (size_t i = 0; i < f->defines.count; i++) h = bld_hash_combine(h, bld_hash_str(f->defines.items[i]));
+    for (size_t i = 0; i < f->include_dirs.count; i++) h = bld_hash_combine(h, bld_hash_str(f->include_dirs.items[i]));
+    for (size_t i = 0; i < f->system_include_dirs.count; i++) h = bld_hash_combine(h, bld_hash_str(f->system_include_dirs.items[i]));
     return h;
 }
 
@@ -329,8 +329,8 @@ static Bld_Hash bld__hash_build_flags(Bld_Hash h, const Bld_BuildFlags* f) {
 /* all link flags (for link step hash) */
 static Bld_Hash bld__hash_link_flags(Bld_Hash h, const Bld_LinkFlags* f) {
     if (f->extra_flags) h = bld_hash_combine(h, bld_hash_str(f->extra_flags));
-    for (size_t i = 0; i < f->libs.len; i++) h = bld_hash_combine(h, bld_hash_str(f->libs.items[i]));
-    for (size_t i = 0; i < f->lib_dirs.len; i++) h = bld_hash_combine(h, bld_hash_str(f->lib_dirs.items[i]));
+    for (size_t i = 0; i < f->libs.count; i++) h = bld_hash_combine(h, bld_hash_str(f->libs.items[i]));
+    for (size_t i = 0; i < f->lib_dirs.count; i++) h = bld_hash_combine(h, bld_hash_str(f->lib_dirs.items[i]));
     return h;
 }
 
@@ -378,9 +378,9 @@ static Bld_CompileFlags bld__merge_compile_flags(Bld_CompileFlags base, const Bl
     if (ov->warnings)                   base.warnings = ov->warnings;
     if (ov->debug_info)                 base.debug_info = ov->debug_info;
     if (ov->extra_flags)                base.extra_flags = ov->extra_flags;
-    if (ov->defines.len)                base.defines = ov->defines;
-    if (ov->include_dirs.len)           base.include_dirs = ov->include_dirs;
-    if (ov->system_include_dirs.len)    base.system_include_dirs = ov->system_include_dirs;
+    if (ov->defines.count)                base.defines = ov->defines;
+    if (ov->include_dirs.count)           base.include_dirs = ov->include_dirs;
+    if (ov->system_include_dirs.count)    base.system_include_dirs = ov->system_include_dirs;
     return base;
 }
 
@@ -453,8 +453,8 @@ static Bld_Hash bld__obj_recipe_hash(void* ctx, Bld_Hash h) {
     /* hash ext_deps compile-side */
     for (size_t i = 0; i < c->parent->ext_deps.count; i++) {
         Bld_Dep* d = c->parent->ext_deps.items[i];
-        for (size_t j = 0; j < d->include_dirs.len; j++) h = bld_hash_combine(h, bld_hash_str(d->include_dirs.items[j]));
-        for (size_t j = 0; j < d->system_include_dirs.len; j++) h = bld_hash_combine(h, bld_hash_str(d->system_include_dirs.items[j]));
+        for (size_t j = 0; j < d->include_dirs.count; j++) h = bld_hash_combine(h, bld_hash_str(d->include_dirs.items[j]));
+        for (size_t j = 0; j < d->system_include_dirs.count; j++) h = bld_hash_combine(h, bld_hash_str(d->system_include_dirs.items[j]));
         if (d->extra_cflags) h = bld_hash_combine(h, bld_hash_str(d->extra_cflags));
     }
     return h;
@@ -576,9 +576,9 @@ static Bld_CompileCmd bld__build_compile_cmd(Bld__ObjCtx* c, Bld_Path output, Bl
     }
     for (size_t i = 0; i < c->parent->ext_deps.count; i++) {
         Bld_Dep* d = c->parent->ext_deps.items[i];
-        for (size_t j = 0; j < d->include_dirs.len; j++)
+        for (size_t j = 0; j < d->include_dirs.count; j++)
             bld_cmd_appendf(&ecf, " -I%s", d->include_dirs.items[j]);
-        for (size_t j = 0; j < d->system_include_dirs.len; j++)
+        for (size_t j = 0; j < d->system_include_dirs.count; j++)
             bld_cmd_appendf(&ecf, " -isystem %s", d->system_include_dirs.items[j]);
         if (d->extra_cflags && d->extra_cflags[0])
             bld_cmd_appendf(&ecf, " %s", d->extra_cflags);
@@ -646,15 +646,15 @@ static Bld_LinkCmd bld__build_link_cmd_exe(Bld* b, Bld_Exe* exe, Bld_Path output
 
     /* merge extra_ldflags from opts.link.libs/lib_dirs + ext_deps + opts.link.extra_flags */
     Bld_Cmd ldf = {0};
-    for (size_t i = 0; i < exe->opts.link.lib_dirs.len; i++)
+    for (size_t i = 0; i < exe->opts.link.lib_dirs.count; i++)
         bld_cmd_appendf(&ldf, " -L%s", exe->opts.link.lib_dirs.items[i]);
-    for (size_t i = 0; i < exe->opts.link.libs.len; i++)
+    for (size_t i = 0; i < exe->opts.link.libs.count; i++)
         bld_cmd_appendf(&ldf, " -l%s", exe->opts.link.libs.items[i]);
     for (size_t i = 0; i < exe->resolved_ext_deps.count; i++) {
         Bld_Dep* d = exe->resolved_ext_deps.items[i];
-        for (size_t j = 0; j < d->lib_dirs.len; j++)
+        for (size_t j = 0; j < d->lib_dirs.count; j++)
             bld_cmd_appendf(&ldf, " -L%s", d->lib_dirs.items[j]);
-        for (size_t j = 0; j < d->libs.len; j++)
+        for (size_t j = 0; j < d->libs.count; j++)
             bld_cmd_appendf(&ldf, " -l%s", d->libs.items[j]);
         if (d->extra_ldflags && d->extra_ldflags[0])
             bld_cmd_appendf(&ldf, " %s", d->extra_ldflags);
@@ -718,8 +718,8 @@ static Bld_Hash bld__link_exe_recipe(void* ctx, Bld_Hash h) {
     }
     for (size_t i = 0; i < c->exe->resolved_ext_deps.count; i++) {
         Bld_Dep* d = c->exe->resolved_ext_deps.items[i];
-        for (size_t j = 0; j < d->libs.len; j++) h = bld_hash_combine(h, bld_hash_str(d->libs.items[j]));
-        for (size_t j = 0; j < d->lib_dirs.len; j++) h = bld_hash_combine(h, bld_hash_str(d->lib_dirs.items[j]));
+        for (size_t j = 0; j < d->libs.count; j++) h = bld_hash_combine(h, bld_hash_str(d->libs.items[j]));
+        for (size_t j = 0; j < d->lib_dirs.count; j++) h = bld_hash_combine(h, bld_hash_str(d->lib_dirs.items[j]));
         if (d->extra_ldflags) h = bld_hash_combine(h, bld_hash_str(d->extra_ldflags));
     }
     return h;
@@ -747,7 +747,7 @@ Bld_Target* bld__add_exe(Bld* b, const Bld_ExeOpts* opts) {
     exe->target.exit->hash_fn = bld__link_exe_recipe;
     exe->target.exit->hash_fn_ctx = ctx;
 
-    for (size_t i = 0; i < exe->opts.sources.len; i++) {
+    for (size_t i = 0; i < exe->opts.sources.count; i++) {
         Bld_Step* obj = bld__add_obj(b, &exe->target, bld_path(exe->opts.sources.items[i]), exe->opts.compile, false, exe->opts.lang);
         bld_da_push(&exe->obj_steps, obj);
         bld_da_push(&exe->target.exit->inputs, obj);
@@ -855,7 +855,7 @@ Bld_Target* bld__add_lib(Bld* b, const Bld_LibOpts* opts) {
     lib->target.exit->hash_fn = bld__link_lib_recipe;
     lib->target.exit->hash_fn_ctx = ctx;
 
-    for (size_t i = 0; i < lib->opts.sources.len; i++) {
+    for (size_t i = 0; i < lib->opts.sources.count; i++) {
         Bld_Step* obj = bld__add_obj(b, &lib->target, bld_path(lib->opts.sources.items[i]), lib->opts.compile, true, lib->opts.lang);
         bld_da_push(&lib->obj_steps, obj);
         bld_da_push(&lib->target.exit->inputs, obj);
@@ -901,7 +901,7 @@ typedef struct { Bld* b; Bld_Paths watch; } Bld__StepHashCtx;
 
 static Bld_Hash bld__step_watch_hash(void* ctx, Bld_Hash h) {
     Bld__StepHashCtx* c = ctx;
-    for (size_t i = 0; i < c->watch.len; i++) {
+    for (size_t i = 0; i < c->watch.count; i++) {
         Bld_Path p = bld_path_join(c->b->root, bld_path(c->watch.items[i]));
         if (bld_fs_is_dir(p)) h = bld_hash_combine(h, bld_hash_dir(p));
         else                   h = bld_hash_combine(h, bld_hash_file(p));
@@ -918,11 +918,11 @@ Bld_Target* bld__add_step(Bld* b, const Bld_StepOpts* opts) {
         t->exit->action_ctx = opts->action_ctx;
     }
     t->exit->has_depfile = opts->has_depfile;
-    t->exit->content_hash = opts->watch.len ? true : opts->content_hash;
+    t->exit->content_hash = opts->watch.count ? true : opts->content_hash;
     if (opts->hash_fn) {
         t->exit->hash_fn = opts->hash_fn;
         t->exit->hash_fn_ctx = opts->hash_fn_ctx;
-    } else if (opts->watch.len) {
+    } else if (opts->watch.count) {
         Bld__StepHashCtx* ctx = bld_arena_alloc(sizeof(Bld__StepHashCtx));
         *ctx = (Bld__StepHashCtx){.b = b, .watch = bld__clone_paths(opts->watch)};
         t->exit->hash_fn = bld__step_watch_hash;
@@ -981,8 +981,8 @@ static Bld_ActionResult bld__run_action(void* ctx, Bld_Path output, Bld_Path dep
     if (c->opts.working_dir && c->opts.working_dir[0])
         bld_cmd_appendf(&cmd, "cd \"%s\" && ", c->opts.working_dir);
     bld_cmd_appendf(&cmd, "\"%s\"", bld__target_artifact(c->b, c->exe_tgt).s);
-    for (size_t i = 0; i < c->opts.args.len; i++) bld_cmd_appendf(&cmd, " \"%s\"", c->opts.args.items[i]);
-    for (size_t i = 0; i < c->b->settings.passthrough.len; i++) bld_cmd_appendf(&cmd, " \"%s\"", c->b->settings.passthrough.items[i]);
+    for (size_t i = 0; i < c->opts.args.count; i++) bld_cmd_appendf(&cmd, " \"%s\"", c->opts.args.items[i]);
+    for (size_t i = 0; i < c->b->settings.passthrough.count; i++) bld_cmd_appendf(&cmd, " \"%s\"", c->b->settings.passthrough.items[i]);
     int rc = system(cmd.items);
     if (rc != 0) return BLD_ACTION_FAILED;
     return BLD_ACTION_OK;
@@ -1049,7 +1049,7 @@ static Bld_ActionResult bld__install_files_action(void* ctx, Bld_Path output, Bl
     Bld__InstallFilesCtx* c = ctx;
     Bld_Path full = bld_path_join(c->b->out, c->dst);
     bld_fs_mkdir_p(full);
-    for (size_t i = 0; i < c->files.len; i++) {
+    for (size_t i = 0; i < c->files.count; i++) {
         Bld_Path src = bld_path(c->files.items[i]);
         const char* fname = bld_path_filename(src);
         Bld_Path dest = bld_path_join(full, bld_path(fname));
