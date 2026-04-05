@@ -14,6 +14,26 @@ static int bld_plat_mkdir(const char* path) { return mkdir(path, 0755); }
 #endif
 
 /* ================================================================
+ *  Rename (atomic on POSIX, retry on Windows for file locking)
+ * ================================================================ */
+
+#ifdef _WIN32
+static int bld_plat_rename(const char* from, const char* to) {
+    /* MoveFileEx with REPLACE_EXISTING handles dest-exists and is more
+     * robust than C rename() on Windows. Retry briefly for antivirus locks. */
+    for (int attempt = 0; attempt < 5; attempt++) {
+        if (MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING)) return 0;
+        Sleep(10); /* 10ms between retries */
+    }
+    return -1;
+}
+#else
+static int bld_plat_rename(const char* from, const char* to) {
+    return rename(from, to);
+}
+#endif
+
+/* ================================================================
  *  Directory iteration
  * ================================================================ */
 
